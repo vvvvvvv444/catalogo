@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Il tuo catalogo online - guida</title>
+<style>
+  :root { --rosso: #ee2b3b; --rosa: #fff0f1; --verde: #16a34a; --giallo: #fff7d6; --grigio: #6b7280; --linea: #e5e7eb; --testo: #1f2328; }
+  @page { size: A4; margin: 14mm 14mm 16mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 11.5pt/1.5 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; color: var(--testo); background: #fff; }
+  .pagina { max-width: 760px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 24pt; margin: 0 0 4px; color: var(--rosso); letter-spacing: -.5px; }
+  h2 { font-size: 15pt; margin: 0; display: flex; align-items: center; gap: 10px; }
+  h3 { font-size: 12pt; margin: 14px 0 6px; }
+  p { margin: 6px 0; }
+  .sotto { font-size: 12.5pt; color: var(--grigio); margin: 0 0 14px; }
+  .copertina { background: linear-gradient(120deg, #ff5a4e, #ee2b3b 55%, #d61f6a); color: #fff; border-radius: 16px; padding: 22px 24px; margin-bottom: 16px; }
+  .copertina h1 { color: #fff; }
+  .copertina p { margin: 4px 0 0; font-size: 12.5pt; }
+  .riassunto { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+  .riassunto div { border: 1px solid var(--linea); border-radius: 12px; padding: 10px 12px; }
+  .riassunto b { display: block; font-size: 10pt; color: var(--grigio); text-transform: uppercase; letter-spacing: .4px; }
+  .mappa { list-style: none; padding: 0; margin: 12px 0 0; counter-reset: m; }
+  .mappa li { counter-increment: m; display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px dashed var(--linea); }
+  .mappa li::before { content: counter(m); flex: 0 0 26px; height: 26px; border-radius: 50%; background: var(--rosso); color: #fff; font-weight: 700; display: grid; place-items: center; font-size: 11pt; }
+  .mappa small { color: var(--grigio); margin-left: auto; white-space: nowrap; }
+  .passo { border: 2px solid var(--linea); border-radius: 16px; padding: 16px 18px; margin: 18px 0; }
+  .passo-testa, h3, .box, table, ol.azioni li { break-inside: avoid; break-after: avoid-page; }
+  .passo-testa { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .num { flex: 0 0 40px; height: 40px; border-radius: 50%; background: var(--rosso); color: #fff; font-weight: 800; font-size: 17pt; display: grid; place-items: center; }
+  .tempo { margin-left: auto; font-size: 10pt; color: var(--grigio); white-space: nowrap; }
+  ol.azioni { margin: 6px 0; padding-left: 22px; }
+  ol.azioni li { margin: 6px 0; padding-left: 2px; }
+  .tasto { display: inline-block; border: 1px solid #c9ccd1; border-bottom-width: 2px; border-radius: 6px; padding: 0 7px; font-size: 10.5pt; background: #fafafa; font-weight: 600; white-space: nowrap; }
+  .scritta { display: inline-block; background: #eef2ff; color: #3730a3; border-radius: 5px; padding: 0 6px; font-weight: 600; }
+  .it { color: var(--grigio); font-size: 10.5pt; }
+  .box { border-radius: 12px; padding: 10px 14px; margin: 10px 0; break-inside: avoid; }
+  .box.attenzione { background: var(--giallo); border-left: 5px solid #eab308; }
+  .box.stop { background: #fef2f2; border-left: 5px solid #dc2626; }
+  .box.ok { background: #f0fdf4; border-left: 5px solid var(--verde); }
+  .box.info { background: #f3f4f6; border-left: 5px solid #9ca3af; }
+  .box b:first-child { display: block; margin-bottom: 2px; }
+  .messaggio { font-family: ui-monospace, Consolas, monospace; background: #f3f4f6; border-radius: 10px; padding: 10px 12px; font-size: 10.5pt; white-space: pre-wrap; margin: 8px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 10.5pt; margin: 8px 0; }
+  td, th { border-bottom: 1px solid var(--linea); padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f9fafb; }
+  .si { color: var(--verde); font-weight: 700; }
+  .no { color: #dc2626; font-weight: 700; }
+  .piede { color: var(--grigio); font-size: 10pt; text-align: center; margin-top: 24px; }
+  .nuova-pagina { break-before: page; }
+  @media (max-width: 560px) { .riassunto { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body><div class="pagina">
+
+<div class="copertina">
+  <h1>Il tuo catalogo online</h1>
+  <p>Cosa fare, passo per passo, per metterlo in piedi. Tutto gratis.</p>
+</div>
+
+<p><b>Cos'è.</b> Un sito tuo, stile AliExpress/SHEIN, con scarpe, borse, accessori, gioielli, cura capelli, skin care e trucchi, divisi per genere e per marchio. Ha un <b>link sempre uguale</b> che mandi tu a chi vuoi.</p>
+<p><b>È chiuso.</b> Chi apre il link deve chiederti l'accesso e <b>lo vede solo dopo che tu l'hai approvato</b>, anche le foto. Tu puoi bloccare chiunque in qualsiasi momento.</p>
+<p><b>Lo gestisci tu.</b> Aggiungi prodotti e foto, cambi i prezzi, metti “esaurito”, “in evidenza”, e i clienti ti mandano le richieste su WhatsApp.</p>
+
+<div class="riassunto">
+  <div><b>Ti serve</b>un <u>computer</u> (non il telefono) per i passi 2 e 4, e i tuoi account Supabase e GitHub.</div>
+  <div><b>Tempo</b>circa 20 minuti in tutto, in due momenti.</div>
+  <div><b>Costo</b>zero. Nessuna carta di credito.</div>
+  <div><b>Da papà ricevi</b>questa guida, il file <u>catalogo-database.txt</u> e più avanti <u>catalogo-sito.zip</u>.</div>
+</div>
+
+<h3>I passi</h3>
+<ol class="mappa">
+  <li>Crea il progetto su Supabase <small>5 min</small></li>
+  <li>Prepara il database (copia e incolla) <small>5 min · computer</small></li>
+  <li>Manda a papà due cose (non sono segrete) <small>2 min</small></li>
+  <li>Quando papà ti rimanda lo zip: metti il sito su GitHub <small>10 min · computer</small></li>
+  <li><span>Entra per <b>prima</b> tu: diventi l'amministratrice</span> <small>2 min</small></li>
+</ol>
+
+<div class="box stop"><b>Tre cose da NON mandare mai a nessuno (neanche a papà)</b>
+La <b>password del database</b>, le chiavi che si chiamano <b>secret</b> o <b>service_role</b>, le <b>password</b> dei tuoi account.</div>
+
+<!-- ================= PASSO 1 ================= -->
+<section class="passo">
+  <div class="passo-testa"><span class="num">1</span><h2>Crea il progetto su Supabase</h2><span class="tempo">5 minuti</span></div>
+  <ol class="azioni">
+    <li>Vai su <b>supabase.com</b> ed entra col tuo account (<span class="scritta">Sign in</span>).</li>
+    <li>Premi <span class="tasto">New project</span> <span class="it">(nuovo progetto)</span>.</li>
+    <li>Compila così:
+      <table>
+        <tr><th>Campo</th><th>Cosa scrivere</th></tr>
+        <tr><td><span class="scritta">Organization</span></td><td>lascia quella che c'è (è gratuita, “Free”)</td></tr>
+        <tr><td><span class="scritta">Project name</span></td><td><b>catalogo</b></td></tr>
+        <tr><td><span class="scritta">Database Password</span></td><td>premi <span class="tasto">Generate a password</span>, poi <b>copiala e salvala</b> in un posto tuo (note del telefono). Non serve a papà.</td></tr>
+        <tr><td><span class="scritta">Region</span></td><td><b>Central EU (Frankfurt)</b> oppure un'altra con “EU”</td></tr>
+      </table>
+    </li>
+    <li>Premi <span class="tasto">Create new project</span> e aspetta 1–2 minuti finché smette di “caricare”.</li>
+  </ol>
+  <div class="box info"><b>Se il progetto l'hai già creato</b>
+  Va benissimo: aprilo e passa al passo 2.</div>
+</section>
+
+<!-- ================= PASSO 2 ================= -->
+<section class="passo">
+  <div class="passo-testa"><span class="num">2</span><h2>Prepara il database</h2><span class="tempo">5 minuti · al computer</span></div>
+
+  <h3>2a. Incolla il testo che ti ha mandato papà</h3>
+  <ol class="azioni">
+    <li>Salva sul computer il file <b>catalogo-database.txt</b> ricevuto su WhatsApp (da WhatsApp Web o WhatsApp Desktop) e aprilo: si apre nel Blocco note.</li>
+    <li>Nel Blocco note seleziona tutto e copia: <span class="tasto">Ctrl</span> + <span class="tasto">A</span>, poi <span class="tasto">Ctrl</span> + <span class="tasto">C</span>.
+      <span class="it">(Su Mac: <span class="tasto">Cmd</span> invece di Ctrl.)</span></li>
+    <li>In Supabase, nel menu a sinistra, apri <span class="scritta">SQL Editor</span> <span class="it">(l'icona con il simbolo &gt;_ )</span>.</li>
+    <li>Se non vedi una pagina bianca in cui scrivere, premi <span class="tasto">+</span> oppure <span class="tasto">New SQL snippet</span>.</li>
+    <li>Clicca nella pagina bianca e incolla: <span class="tasto">Ctrl</span> + <span class="tasto">V</span>.</li>
+    <li>Premi <span class="tasto">Run</span> (in basso a destra).</li>
+    <li>Se compare un avviso tipo <span class="scritta">Potential issue detected</span> o <span class="scritta">destructive operation</span>, premi <span class="tasto">Run this query</span>: è normale, il testo è fatto per poter essere lanciato anche due volte senza fare danni.</li>
+  </ol>
+  <div class="box ok"><b>Com'è se è andato bene</b>
+  In basso compare <span class="scritta">Success. No rows returned</span>.</div>
+  <div class="box attenzione"><b>Se compare una scritta rossa di errore</b>
+  Fai una foto dello schermo e mandala a papà. Non provare a correggere il testo.</div>
+
+  <h3>2b. Spegni la conferma via email</h3>
+  <p>Così i tuoi clienti possono chiederti l'accesso senza dover aprire un'email di conferma (che con l'account gratuito non arriverebbe).</p>
+  <ol class="azioni">
+    <li>Nel menu a sinistra apri <span class="scritta">Authentication</span> <span class="it">(l'icona con le persone)</span>.</li>
+    <li>Apri <span class="scritta">Sign In / Providers</span> <span class="it">(in certe versioni si chiama solo “Providers”)</span>.</li>
+    <li>In alto controlla che <span class="scritta">Allow new users to sign up</span> sia <b>acceso</b>.</li>
+    <li>Clicca su <span class="scritta">Email</span> e <b>spegni</b> <span class="scritta">Confirm email</span>.</li>
+    <li>Premi <span class="tasto">Save</span>.</li>
+  </ol>
+</section>
+
+<!-- ================= PASSO 3 ================= -->
+<section class="passo">
+  <div class="passo-testa"><span class="num">3</span><h2>Manda a papà due cose</h2><span class="tempo">2 minuti</span></div>
+  <p>Queste due cose <b>non sono segrete</b>: sono fatte apposta per stare dentro al sito. Da sole non fanno vedere niente, perché è il database a controllare chi hai approvato.</p>
+  <ol class="azioni">
+    <li>In basso a sinistra apri l'ingranaggio <span class="scritta">Project Settings</span>.</li>
+    <li><b>Indirizzo del progetto</b>: apri <span class="scritta">Data API</span> e copia <span class="scritta">Project URL</span>.<br>
+      <span class="it">È fatto così: https://abcdefghijklmnop.supabase.co</span></li>
+    <li><b>Chiave pubblica</b>: apri <span class="scritta">API Keys</span> e copia la <span class="scritta">Publishable key</span>.<br>
+      <span class="it">Inizia con sb_publishable_... &nbsp;— se non c'è, apri la scheda “Legacy” e copia quella chiamata <b>anon public</b> (inizia con eyJ...).</span></li>
+  </ol>
+  <div class="box info"><b>Scorciatoia</b>
+  In alto nel progetto c'è il pulsante <span class="tasto">Connect</span>: spesso mostra tutte e due le cose insieme.</div>
+  <p>Manda a papà un messaggio così (ti basta incollare i due valori):</p>
+  <div class="messaggio">Indirizzo: https://..........supabase.co
+Chiave: sb_publishable_..........
+Nome utente GitHub: ..........</div>
+  <table>
+    <tr><th>Cosa</th><th>Si può mandare?</th></tr>
+    <tr><td>Project URL (…supabase.co)</td><td class="si">Sì</td></tr>
+    <tr><td>Publishable key / anon public</td><td class="si">Sì</td></tr>
+    <tr><td>Il tuo nome utente GitHub</td><td class="si">Sì</td></tr>
+    <tr><td>Secret key / service_role</td><td class="no">NO, mai</td></tr>
+    <tr><td>Database password</td><td class="no">NO, mai</td></tr>
+    <tr><td>Password di Supabase o GitHub</td><td class="no">NO, mai</td></tr>
+  </table>
+  <p>Papà ti rimanda il file <b>catalogo-sito.zip</b>, già pronto e collegato al tuo database.</p>
+</section>
+
+<!-- ================= PASSO 4 ================= -->
+<section class="passo">
+  <div class="passo-testa"><span class="num">4</span><h2>Metti il sito su GitHub</h2><span class="tempo">10 minuti · al computer</span></div>
+
+  <h3>4a. Crea lo spazio del sito</h3>
+  <ol class="azioni">
+    <li>Vai su <b>github.com</b> ed entra col tuo account.</li>
+    <li>In alto a destra premi <span class="tasto">+</span> e poi <span class="tasto">New repository</span>.</li>
+    <li><span class="scritta">Repository name</span>: scrivi <b>catalogo</b>.</li>
+    <li>Scegli <span class="scritta">Public</span>. <span class="it">Serve per avere il sito gratis. Dentro c'è solo la “grafica” del sito: prodotti, prezzi, foto e clienti stanno su Supabase, chiusi.</span></li>
+    <li>Premi <span class="tasto">Create repository</span>.</li>
+  </ol>
+
+  <h3>4b. Carica i file</h3>
+  <ol class="azioni">
+    <li>Sul computer: tasto destro su <b>catalogo-sito.zip</b> → <span class="scritta">Estrai tutto</span> → <span class="tasto">Estrai</span>. Si apre una cartella.</li>
+    <li>Entra nella cartella finché vedi il file <b>index.html</b> insieme alle cartelle <b>css</b>, <b>js</b>, <b>.github</b>.</li>
+    <li>Nella pagina di GitHub premi il link <span class="scritta">uploading an existing file</span>.</li>
+    <li>Nella cartella seleziona <b>tutto</b> (<span class="tasto">Ctrl</span> + <span class="tasto">A</span>) e <b>trascinalo</b> dentro la pagina di GitHub.</li>
+    <li>Aspetta che finisca di caricare, poi in fondo premi <span class="tasto">Commit changes</span>.</li>
+  </ol>
+  <div class="box attenzione"><b>Importante</b>
+  Nella pagina del repository devi vedere <b>index.html</b> subito, in cima all'elenco. Se invece vedi una cartella “catalogo-sito”, hai trascinato la cartella intera: cancella e trascina il suo <u>contenuto</u>.</div>
+
+  <h3>4c. Accendi il sito</h3>
+  <ol class="azioni">
+    <li>Nel repository apri <span class="scritta">Settings</span> <span class="it">(in alto, con l'ingranaggio)</span>.</li>
+    <li>Nel menu a sinistra apri <span class="scritta">Pages</span>.</li>
+    <li>In <span class="scritta">Source</span> lascia <span class="scritta">Deploy from a branch</span>; in <span class="scritta">Branch</span> scegli <b>main</b> e <b>/ (root)</b>, poi <span class="tasto">Save</span>.</li>
+    <li>Aspetta 1–2 minuti e ricarica la pagina: in alto compare <span class="scritta">Your site is live at …</span>. <b>Quello è il tuo link</b>, sempre uguale:<br>
+      <span class="it">https://tuonome.github.io/catalogo/</span></li>
+  </ol>
+</section>
+
+<!-- ================= PASSO 5 ================= -->
+<section class="passo">
+  <div class="passo-testa"><span class="num">5</span><h2>Entra per prima tu</h2><span class="tempo">2 minuti</span></div>
+  <div class="box stop"><b>Fallo subito, prima di mandare il link a chiunque</b>
+  La <u>prima</u> persona che si registra diventa l'amministratrice del catalogo.</div>
+  <ol class="azioni">
+    <li>Apri il tuo link (anche dal telefono).</li>
+    <li>Premi <span class="tasto">Chiedi l'accesso</span>, scrivi nome, email e una password che ricordi.</li>
+    <li>Entri subito e in alto vedi il pulsante <span class="scritta">Gestisci</span> con l'ingranaggio: vuol dire che sei l'amministratrice.</li>
+    <li>Scrivi a papà “fatto”: fa un ultimo controllo che sia tutto chiuso come deve.</li>
+  </ol>
+  <div class="box info"><b>Consiglio</b>
+  Sul telefono aggiungi il link alla schermata Home (Safari: condividi → “Aggiungi alla schermata Home”; Chrome: ⋮ → “Aggiungi a schermata Home”). Si apre come un'app.</div>
+</section>
+
+<!-- ================= USO ================= -->
+<section class="passo">
+  <div class="passo-testa"><span class="num" style="background:#1f2328">✓</span><h2>Come si usa ogni giorno</h2></div>
+  <table>
+    <tr><th>Voglio…</th><th>Dove</th></tr>
+    <tr><td>Scrivere il nome del negozio e il mio numero WhatsApp</td><td>Gestisci → <b>Impostazioni</b> (fallo per primo: senza numero i clienti non possono scriverti)</td></tr>
+    <tr><td>Copiare il link da mandare</td><td>Gestisci → Impostazioni → <b>Copia</b></td></tr>
+    <tr><td>Aggiungere un prodotto con le foto</td><td>Gestisci → Prodotti → <b>Nuovo prodotto</b>. Le foto si rimpiccioliscono da sole; la prima è la copertina.</td></tr>
+    <tr><td>Cambiare un prezzo</td><td>Gestisci → Prodotti: scrivi nella casella del prezzo e premi Invio</td></tr>
+    <tr><td>Mettere un prodotto esaurito o in evidenza</td><td>Gestisci → Prodotti: gli interruttori sulla riga</td></tr>
+    <tr><td>Far entrare un cliente</td><td>Gestisci → <b>Clienti</b> → Approva (il numerino rosso ti dice quanti aspettano)</td></tr>
+    <tr><td>Togliere l'accesso a qualcuno</td><td>Gestisci → Clienti → Blocca</td></tr>
+    <tr><td>Aggiungere o rinominare un marchio</td><td>Gestisci → Marchi</td></tr>
+  </table>
+  <p><b>Cosa vedono i clienti:</b> il catalogo con ricerca, categorie, filtri per genere, marchio e prezzo; la scheda di ogni prodotto; il pulsante <b>“Chiedi su WhatsApp”</b> e una <b>lista richiesta</b> che ti arriva su WhatsApp già scritta, con taglie, colori e quantità.</p>
+</section>
+
+<section class="passo">
+  <div class="passo-testa"><span class="num" style="background:#6b7280">?</span><h2>Da sapere</h2></div>
+  <ul>
+    <li><b>Spazio gratis:</b> 1 GB per le foto (più di 3.000 foto, perché il sito le rimpicciolisce) e fino a 50.000 clienti registrati.</li>
+    <li><b>Il sonno di Supabase:</b> col piano gratuito, se il catalogo resta chiuso per 7 giorni Supabase lo mette in pausa. Dentro lo zip c'è una “sveglia” automatica che lo tiene attivo. Se capita lo stesso, entra in Supabase e premi <span class="tasto">Restore project</span>: è gratis e i dati restano tutti.</li>
+    <li><b>Email da GitHub</b> che parlano di “scheduled workflow disabled”: è la sveglia che si è fermata; apri l'email e premi il pulsante per riattivarla.</li>
+    <li><b>Un cliente ha dimenticato la password:</b> il catalogo non manda email. Bloccalo e fagli chiedere di nuovo l'accesso con un'altra email, oppure lo cancelli da Supabase → Authentication → Users.</li>
+    <li><b>Qualcosa non va:</b> foto dello schermo a papà.</li>
+  </ul>
+</section>
+
+<p class="piede">Catalogo — guida all'installazione · versione del 25/09/2026</p>
+</div></body>
+</html>
