@@ -1,0 +1,28 @@
+# Supabase gratuito si addormenta dopo 7 giorni senza visite: ogni 3 giorni lo si sveglia.
+# Il piccolo salvataggio finale tiene attivo anche questo repository (GitHub ferma le
+# sveglie dei repository fermi da 60 giorni).
+name: Sveglia Supabase
+on:
+  schedule:
+    - cron: '17 6 */3 * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  sveglia:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bussa a Supabase
+        run: |
+          curl -fsS -X POST "https://xzwqzuicezmfjupjmmkh.supabase.co/rest/v1/rpc/negozio" \
+            -H "apikey: sb_publishable_fXk1qBnkgUn0UVQf5vqLCg_mun3mK5f" \
+            -H "Content-Type: application/json" -d '{}'
+      - uses: actions/checkout@v4
+      - name: Segna la data della sveglia
+        run: |
+          date -u +"%Y-%m-%d %H:%M UTC" > ultima-sveglia.txt
+          git config user.name "sveglia"
+          git config user.email "sveglia@users.noreply.github.com"
+          git add ultima-sveglia.txt
+          git commit -m "sveglia" || true
+          git push

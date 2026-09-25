@@ -3,17 +3,18 @@
    i dati restano solo nel browser di questo computer. */
 window.CONFIG = {
   // Da Supabase > Project Settings > API (vedi GUIDA.html)
-  supabaseUrl: '',   // es. 'https://abcdefgh.supabase.co'
-  supabaseKey: '',   // la chiave "anon public" (e' fatta per stare nel sito)
+  supabaseUrl: 'https://xzwqzuicezmfjupjmmkh.supabase.co',
+  supabaseKey: 'sb_publishable_fXk1qBnkgUn0UVQf5vqLCg_mun3mK5f', // chiave PUBBLICA: e' fatta per stare nel sito
 
   categorie: [
-    { id: 'scarpe',    nome: 'Scarpe',       icona: 'scarpe' },
-    { id: 'borse',     nome: 'Borse',        icona: 'borse' },
-    { id: 'accessori', nome: 'Accessori',    icona: 'accessori' },
-    { id: 'gioielli',  nome: 'Gioielli',     icona: 'gioielli' },
-    { id: 'capelli',   nome: 'Cura capelli', icona: 'capelli' },
-    { id: 'skincare',  nome: 'Skin care',    icona: 'skincare' },
-    { id: 'trucchi',   nome: 'Trucchi',      icona: 'trucchi' }
+    // "uno" = titolo provvisorio delle foto appena caricate, finche' non arriva quello vero
+    { id: 'scarpe',    nome: 'Scarpe',       uno: 'Scarpe',       icona: 'scarpe' },
+    { id: 'borse',     nome: 'Borse',        uno: 'Borsa',        icona: 'borse' },
+    { id: 'accessori', nome: 'Accessori',    uno: 'Accessorio',   icona: 'accessori' },
+    { id: 'gioielli',  nome: 'Gioielli',     uno: 'Gioiello',     icona: 'gioielli' },
+    { id: 'capelli',   nome: 'Cura capelli', uno: 'Cura capelli', icona: 'capelli' },
+    { id: 'skincare',  nome: 'Skin care',    uno: 'Skin care',    icona: 'skincare' },
+    { id: 'trucchi',   nome: 'Trucchi',      uno: 'Trucco',       icona: 'trucchi' }
   ],
 
   generi: [

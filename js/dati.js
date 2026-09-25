@@ -1,6 +1,7 @@
-/* Dati del catalogo: due motori con gli stessi comandi.
+/* Dati della vetrina: due motori con gli stessi comandi.
    - Supabase (quello vero): se config.js ha indirizzo e chiave.
-   - Prova: tutto nel browser di questo computer, per vedere la struttura. */
+   - Prova: tutto nel browser di questo computer, per vedere la struttura.
+   Chi guarda usa vetrina(codice); solo l'amministratrice legge e scrive le tabelle. */
 (function () {
   const C = window.CONFIG;
 
@@ -28,7 +29,7 @@
   }
   async function riduci(file) {
     const img = await apriImmagine(file);
-    const [grande, piccola] = await Promise.all([disegna(img, 1400, 0.85), disegna(img, 500, 0.8)]);
+    const [grande, piccola] = await Promise.all([disegna(img, 1600, 0.85), disegna(img, 600, 0.8)]);
     if (img.close) img.close();
     return { grande, piccola };
   }
@@ -43,13 +44,13 @@
     const m = (e && e.message) || String(e);
     const t = [
       [/Invalid login credentials/i, 'Email o password sbagliate.'],
+      [/Registrazione chiusa|Database error saving new user/i, 'La registrazione è chiusa: l\'account della titolare esiste già.'],
       [/already registered|already exists/i, 'Questa email è già registrata: usa "Entra".'],
       [/Password should be at least/i, 'La password deve avere almeno 6 caratteri.'],
-      [/Email not confirmed/i, 'Email non ancora confermata.'],
       [/Unable to validate email|invalid format|email address .* is invalid/i, 'Email non valida.'],
       [/rate limit|too many/i, 'Troppi tentativi: riprova fra qualche minuto.'],
       [/Failed to fetch|NetworkError|Load failed/i, 'Connessione assente: controlla internet.'],
-      [/row-level security|permission denied|Unauthorized/i, 'Permesso negato.'],
+      [/row-level security|permission denied|Unauthorized|Permesso negato/i, 'Permesso negato.'],
       [/duplicate key/i, 'Esiste già un elemento con questo nome.']
     ];
     for (const [re, it] of t) if (re.test(m)) return new Error(it);
@@ -59,39 +60,32 @@
   // ======================= SUPABASE =======================
   function motoreSupabase() {
     const sb = window.supabase.createClient(C.supabaseUrl, C.supabaseKey);
-    const firme = new Map(); // percorso foto -> { url, scade }
+    const baseFoto = C.supabaseUrl.replace(/\/$/, '') + '/storage/v1/object/public/foto/';
     const ok = r => { if (r.error) throw traduci(r.error); return r.data; };
 
     return {
       demo: false,
 
+      async negozio() { return ok(await sb.rpc('negozio')) || {}; },
+      async vetrina(codice) { return ok(await sb.rpc('vetrina', { codice })); },
+
       async utente() {
         const { data } = await sb.auth.getSession();
         const s = data.session;
         if (!s) return null;
-        const [a, c] = await Promise.all([
-          sb.rpc('e_admin'),
-          sb.from('clienti').select('nome, stato').eq('user_id', s.user.id).maybeSingle()
-        ]);
-        const admin = a.data === true;
-        return {
-          id: s.user.id, email: s.user.email, admin,
-          nome: (c.data && c.data.nome) || '',
-          stato: admin ? 'approvato' : ((c.data && c.data.stato) || 'in_attesa')
-        };
+        const a = await sb.rpc('e_admin');
+        return { id: s.user.id, email: s.user.email, admin: a.data === true };
       },
       async entra(email, password) { ok(await sb.auth.signInWithPassword({ email, password })); },
       async registra(d) {
-        const data = ok(await sb.auth.signUp({
-          email: d.email, password: d.password,
-          options: { data: { nome: d.nome, telefono: d.telefono } }
-        }));
-        if (!data.session) throw new Error('Richiesta ricevuta, ma Supabase vuole la conferma via email: nelle impostazioni di Supabase va spenta "Confirm email" (vedi guida).');
+        const data = ok(await sb.auth.signUp({ email: d.email, password: d.password, options: { data: { nome: d.nome } } }));
+        if (!data.session) throw new Error('Account creato, ma Supabase chiede la conferma via email: va spenta "Confirm email".');
       },
       async esci() { await sb.auth.signOut(); },
 
       async impostazioni() { return ok(await sb.from('impostazioni').select('*').eq('id', 1).maybeSingle()) || {}; },
       async salvaImpostazioni(v) { ok(await sb.from('impostazioni').update(v).eq('id', 1)); },
+      async nuovoCodice() { return ok(await sb.rpc('nuovo_codice')); },
 
       async marchi() { return ok(await sb.from('marchi').select('*').order('nome')); },
       async salvaMarchio(m) {
@@ -127,37 +121,16 @@
         if (!ids.length) return;
         await sb.storage.from('foto').remove(ids.flatMap(id => [id + '.jpg', id + '_m.jpg']));
       },
-      // Le foto sono private: ogni indirizzo e' firmato e scade dopo 6 ore.
-      async urlFoto(ids, miniatura) {
-        const suff = miniatura ? '_m.jpg' : '.jpg';
-        const adesso = Date.now(), fuori = {}, mancano = [];
-        for (const id of ids) {
-          const f = firme.get(id + suff);
-          if (f && f.scade > adesso) fuori[id] = f.url; else mancano.push(id + suff);
-        }
-        for (let i = 0; i < mancano.length; i += 100) {
-          const r = await sb.storage.from('foto').createSignedUrls(mancano.slice(i, i + 100), 6 * 3600);
-          if (r.error) throw traduci(r.error);
-          for (const x of r.data) {
-            if (!x.signedUrl || !x.path) continue;
-            firme.set(x.path, { url: x.signedUrl, scade: adesso + 5 * 3600 * 1000 });
-            fuori[x.path.slice(0, -suff.length)] = x.signedUrl;
-          }
-        }
-        return fuori;
-      },
-
-      async clienti() { return ok(await sb.from('clienti').select('*').order('creato', { ascending: false })); },
-      async statoCliente(id, stato) { ok(await sb.from('clienti').update({ stato }).eq('user_id', id)); }
+      urlFoto(id, miniatura) { return baseFoto + encodeURIComponent(id) + (miniatura ? '_m.jpg' : '.jpg'); }
     };
   }
 
   // ======================= PROVA (solo browser) =======================
   function segnaposto(catId) {
-    const tinte = { scarpe: '#fde2e4', borse: '#e2ecfd', accessori: '#e6f6ea', gioielli: '#fff4d6', capelli: '#efe4fb', skincare: '#e0f5f4', trucchi: '#fde6f3' };
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><rect width="400" height="400" fill="' + (tinte[catId] || '#eee') +
-      '"/><g transform="translate(110 95) scale(7.5)" fill="none" stroke="#9a3b45" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">' +
-      (window.ICONE[catId] || window.ICONE.tutti) + '</g><text x="200" y="360" text-anchor="middle" font-family="sans-serif" font-size="22" fill="#9a3b45" opacity=".6">FOTO DI ESEMPIO</text></svg>';
+    const tinte = { scarpe: '#f3e3e1', borse: '#e3e8f3', accessori: '#e5efe6', gioielli: '#f5eedb', capelli: '#ece5f3', skincare: '#e0efee', trucchi: '#f4e2ec' };
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 400"><rect width="300" height="400" fill="' + (tinte[catId] || '#eee') +
+      '"/><g transform="translate(60 105) scale(7.5)" fill="none" stroke="#7a4b50" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">' +
+      (window.ICONE[catId] || window.ICONE.tutti) + '</g><text x="150" y="360" text-anchor="middle" font-family="sans-serif" font-size="17" letter-spacing="2" fill="#7a4b50" opacity=".6">FOTO DI ESEMPIO</text></svg>';
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }
 
@@ -165,9 +138,9 @@
     const marchi = ['Atelier Rosa', 'Nordico', 'Brillo', 'Verde Puro', 'Velvet Lab'].map((nome, i) => ({ id: 'm' + i, nome }));
     let n = 0;
     const P = (nome, mi, categoria, genere, prezzo, prezzo_pieno, descrizione, extra) => Object.assign({
-      id: 'p' + (++n), nome, marchio_id: 'm' + mi, categoria, genere, prezzo, prezzo_pieno, descrizione,
-      dettagli: '', taglie: '', colori: '', foto: ['seme-' + categoria], disponibile: true, in_evidenza: false,
-      codice: 'ES-' + String(n).padStart(3, '0'), ordine: 0, creato: new Date(Date.now() - n * 3600e3).toISOString()
+      id: 'p' + (++n), nome, marchio_id: mi == null ? null : 'm' + mi, categoria, genere, prezzo, prezzo_pieno, descrizione,
+      dettagli: '', taglie: '', colori: '', foto: ['seme-' + categoria], disponibile: true, in_evidenza: false, visibile: true, da_descrivere: false,
+      codice: '', ordine: 0, creato: new Date(Date.now() - n * 3600e3).toISOString()
     }, extra || {});
     const prodotti = [
       P('Sneaker in pelle bianca', 1, 'scarpe', 'donna', 79.9, 99.9, 'Sneaker bassa in pelle liscia, suola in gomma leggera e soletta imbottita: comoda tutto il giorno, sta bene con jeans e gonne.', { taglie: '36, 37, 38, 39, 40', colori: 'Bianco, Bianco/Oro', in_evidenza: true, dettagli: 'Tomaia in pelle\nSuola in gomma\nPlantare estraibile' }),
@@ -185,24 +158,19 @@
       P('Siero viso vitamina C', 3, 'skincare', 'unisex', 24, 29, 'Siero leggero che uniforma il colorito; si assorbe subito.', { in_evidenza: true }),
       P('Crema idratante giorno', 4, 'skincare', 'donna', 19.9, null, 'Crema per tutti i tipi di pelle, non unge, base perfetta per il trucco.'),
       P('Rossetto opaco lunga tenuta', 4, 'trucchi', 'donna', 14.9, null, 'Rossetto cremoso dal finish opaco che resta fino a 8 ore.', { colori: 'Rosso, Nude, Malva' }),
-      P('Palette ombretti 12 colori', 4, 'trucchi', 'donna', 22, 30, 'Dodici tonalità fra opache e brillanti, facili da sfumare.')
+      P('Palette ombretti 12 colori', 4, 'trucchi', 'donna', 22, 30, 'Dodici tonalità fra opache e brillanti, facili da sfumare.'),
+      P('Nuovo arrivo', null, 'borse', 'donna', null, null, '', { da_descrivere: true })
     ];
     const foto = {};
     C.categorie.forEach(c => { const u = segnaposto(c.id); foto['seme-' + c.id] = { g: u, m: u }; });
-    const giorni = d => new Date(Date.now() - d * 864e5).toISOString();
     return {
       marchi, prodotti, foto, sessione: null,
-      impostazioni: { nome_negozio: 'Il mio Catalogo', sottotitolo: 'Scarpe, borse, gioielli e bellezza', whatsapp: '', messaggio_benvenuto: 'Benvenuta! Scegli quello che ti piace e mandami la richiesta su WhatsApp.' },
-      clienti: [
-        { user_id: 'c1', nome: 'Giulia Bianchi', email: 'giulia@esempio.it', telefono: '333 1234567', stato: 'in_attesa', creato: giorni(0) },
-        { user_id: 'c2', nome: 'Marco Verdi', email: 'marco@esempio.it', telefono: '', stato: 'in_attesa', creato: giorni(1) },
-        { user_id: 'c3', nome: 'Sara Neri', email: 'sara@esempio.it', telefono: '347 7654321', stato: 'approvato', creato: giorni(5) }
-      ]
+      impostazioni: { nome_negozio: 'La mia Vetrina', sottotitolo: 'Scarpe, borse, gioielli e bellezza', whatsapp: '', messaggio_benvenuto: 'Guarda con calma e scrivimi su WhatsApp quello che ti piace.', codice_vetrina: 'prova-prova-prova-1234', registrazione_aperta: false }
     };
   }
 
   function motoreProva() {
-    const CHIAVE = 'catalogo-prova-v1';
+    const CHIAVE = 'vetrina-prova-v2';
     let db = null;
     try { db = JSON.parse(localStorage.getItem(CHIAVE)); } catch (e) { /* vuoto */ }
     if (!db) db = semina();
@@ -211,27 +179,27 @@
       catch (e) { throw new Error('Spazio del browser pieno: la modalità prova tiene poche foto.'); }
     };
     const copia = x => JSON.parse(JSON.stringify(x));
+    const i = db.impostazioni;
 
     return {
       demo: true,
+      async negozio() { return { nome_negozio: i.nome_negozio, sottotitolo: i.sottotitolo, registrazione_aperta: false }; },
+      async vetrina(codice) {
+        if (codice !== i.codice_vetrina) return null;
+        return copia({
+          impostazioni: { nome_negozio: i.nome_negozio, sottotitolo: i.sottotitolo, messaggio_benvenuto: i.messaggio_benvenuto, whatsapp: i.whatsapp },
+          marchi: db.marchi, prodotti: db.prodotti.filter(p => p.visibile !== false)
+        });
+      },
       async utente() { return db.sessione ? copia(db.sessione) : null; },
-      async entra(chi) {
-        db.sessione = chi === 'cliente'
-          ? { id: 'c3', email: 'sara@esempio.it', admin: false, nome: 'Sara Neri', stato: 'approvato' }
-          : { id: 'admin', email: 'venditrice@esempio.it', admin: true, nome: 'Amministrazione', stato: 'approvato' };
-        salva();
-      },
-      async registra(d) {
-        const id = 'c' + Date.now();
-        db.clienti.unshift({ user_id: id, nome: d.nome, email: d.email, telefono: d.telefono || '', stato: 'in_attesa', creato: new Date().toISOString() });
-        db.sessione = { id, email: d.email, admin: false, nome: d.nome, stato: 'in_attesa' };
-        salva();
-      },
+      async entra() { db.sessione = { id: 'admin', email: 'titolare@esempio.it', admin: true }; salva(); },
+      async registra() { throw new Error('In modalità prova non serve registrarsi.'); },
       async esci() { db.sessione = null; salva(); },
       async ricomincia() { localStorage.removeItem(CHIAVE); },
 
-      async impostazioni() { return copia(db.impostazioni); },
-      async salvaImpostazioni(v) { Object.assign(db.impostazioni, v); salva(); },
+      async impostazioni() { return copia(i); },
+      async salvaImpostazioni(v) { Object.assign(i, v); salva(); },
+      async nuovoCodice() { i.codice_vetrina = 'prova-' + Math.random().toString(36).slice(2, 14) + '-x'; salva(); return i.codice_vetrina; },
 
       async marchi() { return copia(db.marchi).sort((a, b) => a.nome.localeCompare(b.nome)); },
       async salvaMarchio(m) {
@@ -249,9 +217,9 @@
       async prodotti() { return copia(db.prodotti); },
       async salvaProdotto(p) {
         const r = Object.assign({}, p, { aggiornato: new Date().toISOString() });
-        const i = r.id ? db.prodotti.findIndex(x => x.id === r.id) : -1;
-        if (i >= 0) db.prodotti[i] = r;
-        else { r.id = 'p' + Date.now(); r.creato = r.aggiornato; db.prodotti.unshift(r); }
+        const k = r.id ? db.prodotti.findIndex(x => x.id === r.id) : -1;
+        if (k >= 0) db.prodotti[k] = r;
+        else { r.id = 'p' + Date.now() + Math.random().toString(36).slice(2, 5); r.creato = r.aggiornato; db.prodotti.unshift(r); }
         salva(); return copia(r);
       },
       async eliminaProdotto(p) {
@@ -269,25 +237,11 @@
         ids.forEach(id => { if (!String(id).startsWith('seme-')) delete db.foto[id]; });
         salva();
       },
-      async urlFoto(ids, miniatura) {
-        const fuori = {};
-        ids.forEach(id => { const f = db.foto[id]; if (f) fuori[id] = miniatura ? f.m : f.g; });
-        return fuori;
-      },
-
-      async clienti() { return copia(db.clienti); },
-      async statoCliente(id, stato) {
-        const c = db.clienti.find(x => x.user_id === id);
-        if (c) c.stato = stato;
-        salva();
-      }
+      urlFoto(id, miniatura) { const f = db.foto[id]; return f ? (miniatura ? f.m : f.g) : ''; }
     };
   }
 
   const vero = !!(C.supabaseUrl && C.supabaseKey);
-  if (vero && !window.supabase) {
-    window.DATI_ERRORE = 'Non riesco a scaricare la libreria di Supabase: controlla la connessione.';
-  }
+  if (vero && !window.supabase) window.DATI_ERRORE = 'Non riesco a scaricare la libreria di Supabase: controlla la connessione.';
   window.DATI = vero && window.supabase ? motoreSupabase() : motoreProva();
-  window.DATI_VERO = vero;
 })();
