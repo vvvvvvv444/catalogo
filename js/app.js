@@ -1,18 +1,65 @@
-/* La vetrina: chi ha il link (?v=codice) guarda; la titolare entra e gestisce. */
+/* La vetrina: chi ha il link (?v=codice) guarda; la titolare entra e gestisce tutto. */
 (function () {
   const C = window.CONFIG;
   const D = window.DATI;
   const $app = document.getElementById('app');
-  const S = { modo: null, utente: null, imp: {}, marchi: [], prodotti: [], codice: '' };
+  const S = { modo: null, utente: null, imp: {}, marchi: [], prodotti: [], richieste: [], codice: '' };
   const scorrimenti = {};
-  const A_BLOCCHI = 48; // quante schede disegnare alla volta
+  const A_BLOCCHI = 48;   // schede disegnate alla volta nelle griglie lunghe
+  const PER_FILA = 12;    // schede per fila nell'espositore
+
+  // ---------------------------------------------------------------- aspetto
+  const ASPETTO_BASE = { principale: '#111111', accento: '#e0263b', banner: '#f7f1ea', carattere: 'moderno', forma: 'verticale', colonne: 2, prezzi: true, evidenza: true, logo: '', immagine: '' };
+  const CARATTERI = {
+    moderno:  { nome: 'Moderno',  testo: '"Helvetica Neue", Helvetica, Arial, sans-serif', titoli: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
+    elegante: { nome: 'Elegante', testo: '"Helvetica Neue", Helvetica, Arial, sans-serif', titoli: '"Playfair Display", Georgia, serif', url: 'Playfair+Display:wght@600;800' },
+    morbido:  { nome: 'Morbido',  testo: '"Nunito", system-ui, sans-serif', titoli: '"Nunito", system-ui, sans-serif', url: 'Nunito:wght@400;700;900' },
+    classico: { nome: 'Classico', testo: '"Lora", Georgia, serif', titoli: '"Lora", Georgia, serif', url: 'Lora:wght@400;600;700' },
+    deciso:   { nome: 'Deciso',   testo: '"Montserrat", system-ui, sans-serif', titoli: '"Montserrat", system-ui, sans-serif', url: 'Montserrat:wght@400;600;800' }
+  };
+  const TAVOLOZZE = [
+    ['Nero elegante', '#111111', '#e0263b', '#f7f1ea'],
+    ['Rosa cipria', '#b4536a', '#d6336c', '#fbeef0'],
+    ['Oro e nero', '#1c1c1c', '#b8892b', '#f6efe1'],
+    ['Blu notte', '#1e2a4a', '#e0263b', '#eef1f7'],
+    ['Verde salvia', '#3f5a4c', '#c2553a', '#eef3ee'],
+    ['Lavanda', '#5b4b8a', '#d6336c', '#f1eef8']
+  ];
+  const ICONE_CATEGORIA = [['scarpe', 'Scarpe'], ['borse', 'Borsa'], ['accessori', 'Occhiali'], ['gioielli', 'Gioiello'], ['orologio', 'Orologio'], ['capelli', 'Flacone'], ['skincare', 'Crema'], ['trucchi', 'Rossetto'], ['profumo', 'Profumo'], ['maglia', 'Abbigliamento'], ['regalo', 'Regalo'], ['stella', 'Stella'], ['sacca', 'Sacchetto'], ['tutti', 'Quadrati']];
+
+  const asp = () => Object.assign({}, ASPETTO_BASE, S.imp.aspetto || {});
+  function testoSu(colore) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(colore || ''); if (!m) return '#fff';
+    const n = parseInt(m[1], 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 160 ? '#111' : '#fff';
+  }
+  function applicaAspetto(a) {
+    a = Object.assign({}, ASPETTO_BASE, a || {});
+    const r = document.documentElement.style;
+    r.setProperty('--nero', a.principale); r.setProperty('--su-nero', testoSu(a.principale));
+    r.setProperty('--rosso', a.accento); r.setProperty('--su-rosso', testoSu(a.accento));
+    r.setProperty('--crema', a.banner);
+    r.setProperty('--forma', a.forma === 'quadrata' ? '1 / 1' : '3 / 4');
+    r.setProperty('--col-tel', String(Number(a.colonne) === 3 ? 3 : 2));
+    const F = CARATTERI[a.carattere] || CARATTERI.moderno;
+    r.setProperty('--carattere', F.testo); r.setProperty('--titoli', F.titoli);
+    if (F.url && !document.getElementById('font-' + a.carattere)) {
+      const l = document.createElement('link');
+      l.id = 'font-' + a.carattere; l.rel = 'stylesheet';
+      l.href = 'https://fonts.googleapis.com/css2?family=' + F.url + '&display=swap';
+      document.head.appendChild(l);
+    }
+    const tema = document.querySelector('meta[name="theme-color"]'); if (tema) tema.content = a.principale;
+  }
 
   // ---------------------------------------------------------------- utilità
   const h = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const numero = v => (v === '' || v == null || isNaN(Number(v))) ? null : Number(v);
   const EURO = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
   const euro = n => numero(n) == null ? '' : EURO.format(n);
-  const cat = id => C.categorie.find(c => c.id === id) || { id, nome: id || '—', icona: 'tutti' };
+  const categorie = () => (Array.isArray(S.imp.categorie) && S.imp.categorie.length ? S.imp.categorie : C.categorie);
+  const catVisibili = () => categorie().filter(c => c.visibile !== false);
+  const cat = id => categorie().find(c => c.id === id) || C.categorie.find(c => c.id === id) || { id, nome: id || '—', uno: id || '', icona: 'tutti' };
   const gen = id => C.generi.find(g => g.id === id) || { id, nome: id || '—' };
   const marchio = id => S.marchi.find(m => m.id === id);
   const semplice = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -20,7 +67,10 @@
   const sconto = p => (numero(p.prezzo_pieno) > numero(p.prezzo) && numero(p.prezzo) > 0) ? Math.round((1 - p.prezzo / p.prezzo_pieno) * 100) : 0;
   const nomeNegozio = () => S.imp.nome_negozio || 'Vetrina';
   const admin = () => S.modo === 'admin';
+  const prezziVisibili = () => asp().prezzi !== false;
   const linkVetrina = codice => location.origin + location.pathname + '?v=' + encodeURIComponent(codice || S.imp.codice_vetrina || '');
+  const nuoveRichieste = () => S.richieste.filter(r => !r.letta).length;
+  const dataBreve = d => d ? new Date(d).toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
 
   let timerAvviso;
   function avviso(testo, tipo) {
@@ -36,11 +86,11 @@
     return u ? '<img src="' + h(u) + '" alt="' + h(alt || '') + '" loading="lazy" decoding="async">' : '<div class="senza-foto">' + icona('foto') + '</div>';
   };
 
-  // ---------------------------------------------------------------- richiesta (per ogni visitatore)
-  const RICH = 'vetrina-richiesta';
-  function richiesta() { try { return (JSON.parse(localStorage.getItem(RICH)) || []).filter(x => S.prodotti.some(p => p.id === x.id)); } catch (e) { return []; } }
-  function salvaRichiesta(r) { try { localStorage.setItem(RICH, JSON.stringify(r)); } catch (e) { /* niente */ } }
-  const contaRichiesta = () => richiesta().reduce((a, x) => a + x.qta, 0);
+  // ---------------------------------------------------------------- la mia lista (per ogni visitatore)
+  const RICH = 'vetrina-lista';
+  function lista() { try { return (JSON.parse(localStorage.getItem(RICH)) || []).filter(x => S.prodotti.some(p => p.id === x.id)); } catch (e) { return []; } }
+  function salvaLista(r) { try { localStorage.setItem(RICH, JSON.stringify(r)); } catch (e) { /* niente */ } }
+  const contaLista = () => lista().reduce((a, x) => a + x.qta, 0);
 
   function numeroWhatsapp() {
     let n = String(S.imp.whatsapp || '').replace(/\D/g, '');
@@ -48,13 +98,13 @@
     if (n.length === 10 && n.startsWith('3')) n = '39' + n;
     return n;
   }
+  const whatsappAttivo = () => !!(S.imp.mostra_whatsapp && numeroWhatsapp());
+  const richiesteAttive = () => !!S.imp.richieste_attive;
   function apriWhatsapp(testo) {
-    const n = numeroWhatsapp();
-    if (!n) return avviso('Il numero WhatsApp della vetrina non è ancora impostato.', 'errore');
-    window.open('https://wa.me/' + n + '?text=' + encodeURIComponent(testo), '_blank', 'noopener');
+    window.open('https://wa.me/' + numeroWhatsapp() + '?text=' + encodeURIComponent(testo), '_blank', 'noopener');
   }
 
-  // ---------------------------------------------------------------- indirizzi
+  // ---------------------------------------------------------------- indirizzi e filtri
   function leggiIndirizzo() {
     const [percorso, qs] = location.hash.slice(1).split('?');
     return { pezzi: (percorso || '/').split('/').filter(Boolean), par: new URLSearchParams(qs || '') };
@@ -81,8 +131,11 @@
     return '#/' + (s ? '?' + s : '');
   }
   const filtriVuoti = f => !f.cat && !f.gen && !f.m.length && !f.q && !f.min && !f.max && !f.disp;
-  // in vetrina l'amministratrice vede solo cio' che vedono i clienti
-  const inVetrina = () => admin() ? S.prodotti.filter(p => p.visibile !== false) : S.prodotti;
+  // in vetrina si vede solo cio' che e' visibile e sta in una categoria visibile
+  const inVetrina = () => {
+    const ok = new Set(catVisibili().map(c => c.id));
+    return S.prodotti.filter(p => p.visibile !== false && ok.has(p.categoria));
+  };
 
   function filtra(f, salta) {
     const q = semplice(f.q).split(/\s+/).filter(Boolean);
@@ -102,8 +155,8 @@
       return true;
     });
   }
-  function ordina(lista, ord) {
-    const l = lista.slice();
+  function ordina(l0, ord) {
+    const l = l0.slice();
     const pz = p => numero(p.prezzo) == null ? Infinity : Number(p.prezzo);
     if (ord === 'prezzo-su') l.sort((a, b) => pz(a) - pz(b));
     else if (ord === 'prezzo-giu') l.sort((a, b) => (pz(b) === Infinity ? -1 : pz(b)) - (pz(a) === Infinity ? -1 : pz(a)));
@@ -114,22 +167,25 @@
   }
 
   // ---------------------------------------------------------------- guscio comune
+  function logoHtml() {
+    const a = asp();
+    return '<a class="logo" href="#/" title="' + h(nomeNegozio()) + '">' + (a.logo ? '<img src="' + h(D.urlFoto(a.logo, false)) + '" alt="' + h(nomeNegozio()) + '">' : h(nomeNegozio())) + '</a>';
+  }
   function testata(f) {
     f = f || nessunFiltro();
-    const n = contaRichiesta();
-    const daDescr = admin() ? S.prodotti.filter(p => p.da_descrivere).length : 0;
-    return '<header class="testata"><div class="contenitore testata-riga">' +
-      '<a class="logo" href="#/" title="' + h(nomeNegozio()) + '">' + h(nomeNegozio()) + '</a>' +
-      '<form class="cerca" data-form="cerca" role="search"><input name="q" type="search" placeholder="Cerca prodotti, marchi…" value="' + h(f.q) + '" aria-label="Cerca"><button aria-label="Cerca">' + icona('cerca') + '</button></form>' +
+    const n = contaLista();
+    const avvisi = admin() ? nuoveRichieste() : 0;
+    return '<header class="testata"><div class="contenitore testata-riga">' + logoHtml() +
+      '<form class="cerca" data-form="cerca" role="search"><input name="q" type="search" placeholder="Cerca prodotti, marchi, codici…" value="' + h(f.q) + '" aria-label="Cerca"><button aria-label="Cerca">' + icona('cerca') + '</button></form>' +
       '<nav class="azioni">' +
         '<a class="icona-btn" href="#/marchi">' + icona('marchio') + '<span>Marchi</span></a>' +
-        '<a class="icona-btn" href="#/richiesta">' + icona('sacca') + '<span>Scelti</span>' + (n ? '<b class="pallino">' + n + '</b>' : '') + '</a>' +
+        '<a class="icona-btn" href="#/lista">' + icona('sacca') + '<span>La mia lista</span>' + (n ? '<b class="pallino">' + n + '</b>' : '') + '</a>' +
         (admin() ? '<a class="icona-btn evidenziato" href="#/admin/carica">' + icona('foto') + '<span>Carica</span></a>' +
-          '<a class="icona-btn" href="#/admin">' + icona('ingranaggio') + '<span>Gestisci</span>' + (daDescr ? '<b class="pallino grigio">' + daDescr + '</b>' : '') + '</a>' : '') +
+          '<a class="icona-btn" href="#/admin">' + icona('ingranaggio') + '<span>Gestisci</span>' + (avvisi ? '<b class="pallino">' + avvisi + '</b>' : '') + '</a>' : '') +
       '</nav></div>' +
       '<div class="contenitore"><nav class="categorie">' +
         '<a class="cat' + (!f.cat ? ' attiva' : '') + '" href="' + linkFiltri(f, { cat: '', m: [] }) + '"><span class="cat-ico">' + icona('tutti') + '</span>Tutto</a>' +
-        C.categorie.map(c => '<a class="cat' + (f.cat === c.id ? ' attiva' : '') + '" href="' + linkFiltri(f, { cat: c.id }) + '"><span class="cat-ico">' + icona(c.icona) + '</span>' + h(c.nome) + '</a>').join('') +
+        catVisibili().map(c => '<a class="cat' + (f.cat === c.id ? ' attiva' : '') + '" href="' + linkFiltri(f, { cat: c.id, m: [] }) + '"><span class="cat-ico">' + icona(c.icona) + '</span>' + h(c.nome) + '</a>').join('') +
       '</nav></div></header>' +
       (D.demo ? '<div class="nastro-prova">Modalità prova: i dati restano solo su questo computer. <button data-az="ricomincia">Ricomincia da capo</button></div>' : '');
   }
@@ -137,52 +193,55 @@
     $app.innerHTML = testata(f) + '<main class="contenitore">' + html + '</main>';
   }
 
+  function prezzoHtml(p, grande) {
+    if (!prezziVisibili()) return '';
+    const sc = sconto(p);
+    return numero(p.prezzo) != null
+      ? '<b' + (sc ? ' class="saldo"' : '') + '>' + euro(p.prezzo) + '</b>' + (sc ? '<s>' + euro(p.prezzo_pieno) + '</s>' + (grande ? '<span class="risparmio">-' + sc + '%</span>' : '') : '')
+      : '<span class="su-richiesta">Prezzo su richiesta</span>';
+  }
   function scheda(p) {
-    const mm = marchio(p.marchio_id), sc = sconto(p);
+    const sc = prezziVisibili() ? sconto(p) : 0;
     return '<a class="card' + (p.disponibile ? '' : ' esaurito') + '" href="#/p/' + h(p.id) + '">' +
       '<div class="card-foto">' + fotoTag(p.foto && p.foto[0], false, p.nome) +
         (sc ? '<span class="badge-sconto">-' + sc + '%</span>' : '') +
         (p.disponibile ? '' : '<span class="badge-esaurito">Esaurito</span>') +
         (p.foto && p.foto.length > 1 ? '<span class="badge-foto">' + p.foto.length + '</span>' : '') + '</div>' +
-      '<div class="card-testo">' +
-        '<div class="card-nome">' + h(p.nome) + '</div>' +
-        '<div class="card-prezzo">' + (numero(p.prezzo) != null ? '<b' + (sc ? ' class="saldo"' : '') + '>' + euro(p.prezzo) + '</b>' : '<span class="su-richiesta">Prezzo su richiesta</span>') +
-          (sc ? '<s>' + euro(p.prezzo_pieno) + '</s>' : '') + '</div>' +
+      '<div class="card-testo"><div class="card-nome">' + h(p.nome) + '</div>' +
+        '<div class="card-prezzo">' + prezzoHtml(p) + (p.codice ? '<i class="card-codice">' + h(p.codice) + '</i>' : '') + '</div>' +
       '</div></a>';
   }
 
-  // griglia che si allunga scorrendo (la vetrina puo' essere immensa)
   let osservatore = null;
-  function grigliaInfinita(lista) {
+  function grigliaInfinita(l) {
     if (osservatore) { osservatore.disconnect(); osservatore = null; }
     const griglia = document.getElementById('griglia'), fondo = document.getElementById('fondo');
     if (!griglia) return;
     let fatti = 0;
     const altri = () => {
-      griglia.insertAdjacentHTML('beforeend', lista.slice(fatti, fatti + A_BLOCCHI).map(scheda).join(''));
+      griglia.insertAdjacentHTML('beforeend', l.slice(fatti, fatti + A_BLOCCHI).map(scheda).join(''));
       fatti += A_BLOCCHI;
-      if (fatti >= lista.length && osservatore) { osservatore.disconnect(); fondo.hidden = true; }
+      if (fatti >= l.length && osservatore) { osservatore.disconnect(); fondo.hidden = true; }
     };
     altri();
-    if (fatti < lista.length && 'IntersectionObserver' in window) {
+    if (fatti < l.length && 'IntersectionObserver' in window) {
       osservatore = new IntersectionObserver(e => { if (e.some(x => x.isIntersecting)) altri(); }, { rootMargin: '900px' });
       osservatore.observe(fondo);
-    } else if (fatti < lista.length) { while (fatti < lista.length) altri(); }
-    else fondo.hidden = true;
+    } else { while (fatti < l.length) altri(); fondo.hidden = true; }
   }
 
   // ---------------------------------------------------------------- VETRINA
   function paginaNegozio(par) {
     const f = filtriDa(par);
-    const lista = ordina(filtra(f), f.ord);
-    const vuoti = filtriVuoti(f);
+    const l = ordina(filtra(f), f.ord);
+    const vuoti = filtriVuoti(f), a = asp();
     const conta = (campo, val) => filtra(f, campo).filter(p => (campo === 'm' ? p.marchio_id : campo === 'cat' ? p.categoria : p.genere) === val).length;
 
     const pannello =
       '<aside class="filtri" id="filtri"><div class="filtri-testa"><b>Filtri</b><button class="icona-btn" data-az="chiudi-filtri" aria-label="Chiudi">' + icona('chiudi') + '</button></div>' +
       '<div class="filtro-gruppo"><h4>Categoria</h4>' +
         '<a class="filtro-voce' + (!f.cat ? ' sel' : '') + '" href="' + linkFiltri(f, { cat: '' }) + '">Tutte</a>' +
-        C.categorie.map(c => { const n = conta('cat', c.id); return n || f.cat === c.id ? '<a class="filtro-voce' + (f.cat === c.id ? ' sel' : '') + '" href="' + linkFiltri(f, { cat: c.id }) + '">' + h(c.nome) + '<i>' + n + '</i></a>' : ''; }).join('') +
+        catVisibili().map(c => { const n = conta('cat', c.id); return n || f.cat === c.id ? '<a class="filtro-voce' + (f.cat === c.id ? ' sel' : '') + '" href="' + linkFiltri(f, { cat: c.id }) + '">' + h(c.nome) + '<i>' + n + '</i></a>' : ''; }).join('') +
       '</div>' +
       '<div class="filtro-gruppo"><h4>Genere</h4>' +
         '<a class="filtro-voce' + (!f.gen ? ' sel' : '') + '" href="' + linkFiltri(f, { gen: '' }) + '">Tutti</a>' +
@@ -195,60 +254,59 @@
           const nuovi = sel ? f.m.filter(x => x !== m.id) : f.m.concat(m.id);
           return '<a class="filtro-voce spunta' + (sel ? ' sel' : '') + '" href="' + linkFiltri(f, { m: nuovi }) + '"><span class="casella">' + (sel ? icona('spunta') : '') + '</span>' + h(m.nome) + '<i>' + n + '</i></a>';
         }).join('') + '</div>' : '') +
-      '<form class="filtro-gruppo" data-form="prezzo"><h4>Prezzo (€)</h4><div class="prezzo-da-a">' +
+      (prezziVisibili() ? '<form class="filtro-gruppo" data-form="prezzo"><h4>Prezzo (€)</h4><div class="prezzo-da-a">' +
         '<input name="min" type="number" min="0" step="1" placeholder="da" value="' + h(f.min) + '"><span>–</span>' +
-        '<input name="max" type="number" min="0" step="1" placeholder="a" value="' + h(f.max) + '"><button class="btn piccolo">OK</button></div></form>' +
+        '<input name="max" type="number" min="0" step="1" placeholder="a" value="' + h(f.max) + '"><button class="btn piccolo">OK</button></div></form>' : '') +
       '<div class="filtro-gruppo"><a class="filtro-voce spunta' + (f.disp ? ' sel' : '') + '" href="' + linkFiltri(f, { disp: !f.disp }) + '"><span class="casella">' + (f.disp ? icona('spunta') : '') + '</span>Solo disponibili</a></div>' +
       (!vuoti ? '<a class="btn contorno largo" href="#/">Togli tutti i filtri</a>' : '') +
       '</aside><div class="velo" data-az="chiudi-filtri"></div>';
 
     let testa = '';
     if (vuoti) {
-      const evid = ordina(inVetrina().filter(p => p.in_evidenza && p.disponibile));
-      const marchiUsati = S.marchi.filter(m => inVetrina().some(p => p.marchio_id === m.id));
+      const evid = a.evidenza !== false ? ordina(inVetrina().filter(p => p.in_evidenza && p.disponibile)) : [];
+      const conImmagine = !!a.immagine;
       testa =
-        '<section class="vetrina"><div><h1>' + h(nomeNegozio()) + '</h1>' +
+        '<section class="vetrina' + (conImmagine ? ' con-immagine' : '') + '"' + (conImmagine ? ' style="background-image:url(\'' + h(D.urlFoto(a.immagine, false)) + '\')"' : '') + '><div>' +
+          '<h1>' + h(nomeNegozio()) + '</h1>' +
           (S.imp.sottotitolo ? '<p class="vetrina-sotto">' + h(S.imp.sottotitolo) + '</p>' : '') +
           (S.imp.messaggio_benvenuto ? '<p>' + h(S.imp.messaggio_benvenuto) + '</p>' : '') + '</div>' +
           '<div class="vetrina-generi">' + C.generi.filter(g => inVetrina().some(p => p.genere === g.id)).map(g => '<a href="' + linkFiltri(f, { gen: g.id }) + '">' + h(g.nome) + '</a>').join('') + '</div></section>' +
         (evid.length ? '<section class="blocco"><div class="blocco-testa"><h2>' + icona('stella') + ' In evidenza</h2></div><div class="fila">' + evid.map(scheda).join('') + '</div></section>' : '');
     }
-    // espositore: prima la categoria, poi il marchio (se non si cerca e non si e' scelto un marchio)
     const perReparti = !f.q && !f.m.length;
-
     const titolo = f.q ? 'Risultati per “' + h(f.q) + '”'
-      : f.cat ? h(cat(f.cat).nome) + (f.gen ? ' · ' + h(gen(f.gen).nome) : '')
-      : f.m.length === 1 ? (f.cat ? h(cat(f.cat).nome) + ' · ' : '') + (marchio(f.m[0]) ? h(marchio(f.m[0]).nome) : 'Altri')
+      : f.cat ? h(cat(f.cat).nome) + (f.m.length === 1 ? ' · ' + (marchio(f.m[0]) ? h(marchio(f.m[0]).nome) : 'Altri') : '') + (f.gen ? ' · ' + h(gen(f.gen).nome) : '')
+      : f.m.length === 1 ? (marchio(f.m[0]) ? h(marchio(f.m[0]).nome) : 'Altri')
       : f.gen ? h(gen(f.gen).nome) : 'La vetrina';
     const schede = C.generi.filter(g => filtra(f, 'gen').some(p => p.genere === g.id));
-    const ords = [['', 'Consigliati'], ['nuovi', 'Novità'], ['prezzo-su', 'Prezzo: dal più basso'], ['prezzo-giu', 'Prezzo: dal più alto'], ['sconto', 'Sconto maggiore']];
+    const ords = [['', 'Consigliati'], ['nuovi', 'Novità']].concat(prezziVisibili() ? [['prezzo-su', 'Prezzo: dal più basso'], ['prezzo-giu', 'Prezzo: dal più alto'], ['sconto', 'Sconto maggiore']] : []);
 
     disegna(
       '<div class="negozio">' + pannello + '<section class="risultati">' + testa +
-        '<div class="risultati-testa"><h2>' + titolo + ' <small>' + lista.length + (lista.length === 1 ? ' prodotto' : ' prodotti') + '</small></h2>' +
+        '<div class="risultati-testa"><h2>' + titolo + ' <small>' + l.length + (l.length === 1 ? ' prodotto' : ' prodotti') + '</small></h2>' +
           '<div class="risultati-comandi"><button class="btn contorno piccolo solo-telefono" data-az="apri-filtri">' + icona('filtro') + ' Filtri</button>' +
           '<select data-az="ordina" aria-label="Ordina">' + ords.map(o => '<option value="' + o[0] + '"' + (f.ord === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div></div>' +
         (schede.length > 1 || f.gen ? '<div class="schede-genere"><a class="' + (!f.gen ? 'sel' : '') + '" href="' + linkFiltri(f, { gen: '' }) + '">Tutti</a>' +
           schede.map(g => '<a class="' + (f.gen === g.id ? 'sel' : '') + '" href="' + linkFiltri(f, { gen: g.id }) + '">' + h(g.nome) + '</a>').join('') + '</div>' : '') +
-        (lista.length && perReparti ? espositore(lista, f)
-          : lista.length ? '<div class="griglia" id="griglia"></div><div id="fondo" class="fondo"><span class="rotella"></span></div>'
-          : '<div class="vuoto">' + icona('cerca') + '<p>' + (S.prodotti.length ? 'Nessun prodotto trovato.' : 'La vetrina è ancora vuota.') + '</p>' +
+        (l.length && perReparti ? espositore(l, f)
+          : l.length ? '<div class="griglia" id="griglia"></div><div id="fondo" class="fondo"><span class="rotella"></span></div>'
+          : '<div class="vuoto">' + icona('cerca') + '<p>' + (inVetrina().length ? 'Nessun prodotto trovato.' : 'La vetrina è ancora vuota.') + '</p>' +
             (!vuoti ? '<a class="btn" href="#/">Mostra tutto</a>' : admin() ? '<a class="btn" href="#/admin/carica">' + icona('foto') + ' Carica le prime foto</a>' : '') + '</div>') +
       '</section></div>', f);
-    if (!perReparti) grigliaInfinita(lista);
+    if (!perReparti) grigliaInfinita(l);
   }
 
-  const PER_FILA = 12;
-  function gruppiMarchio(lista) {
+  function gruppiMarchio(l) {
     const g = new Map();
-    lista.forEach(p => { const k = p.marchio_id && marchio(p.marchio_id) ? p.marchio_id : '_'; if (!g.has(k)) g.set(k, []); g.get(k).push(p); });
+    l.forEach(p => { const k = p.marchio_id && marchio(p.marchio_id) ? p.marchio_id : '_'; if (!g.has(k)) g.set(k, []); g.get(k).push(p); });
     return [...g.entries()].map(([k, prodotti]) => ({ id: k, nome: k === '_' ? 'Altri' : marchio(k).nome, prodotti }))
       .sort((a, b) => (a.id === '_') - (b.id === '_') || a.nome.localeCompare(b.nome));
   }
-  function espositore(lista, f) {
-    const reparti = f.cat ? [cat(f.cat)] : C.categorie;
+  // espositore: prima la categoria, poi il marchio
+  function espositore(l, f) {
+    const reparti = f.cat ? [cat(f.cat)] : catVisibili();
     return reparti.map(c => {
-      const inCat = lista.filter(p => p.categoria === c.id);
+      const inCat = l.filter(p => p.categoria === c.id);
       if (!inCat.length) return '';
       const gruppi = gruppiMarchio(inCat);
       const soloAltri = gruppi.length === 1 && gruppi[0].id === '_';
@@ -281,8 +339,8 @@
   // ---------------------------------------------------------------- SCHEDA PRODOTTO
   function paginaProdotto(id) {
     const p = S.prodotti.find(x => x.id === id);
-    if (!p) return disegna('<div class="vuoto"><p>Prodotto non trovato.</p><a class="btn" href="#/">Torna alla vetrina</a></div>');
-    const mm = marchio(p.marchio_id), sc = sconto(p), foto = p.foto || [];
+    if (!p || (!admin() && !inVetrina().includes(p))) return disegna('<div class="vuoto"><p>Prodotto non trovato.</p><a class="btn" href="#/">Torna alla vetrina</a></div>');
+    const mm = marchio(p.marchio_id), sc = prezziVisibili() ? sconto(p) : 0, foto = p.foto || [];
     const taglie = elenco(p.taglie), colori = elenco(p.colori);
     const dettagli = String(p.dettagli || '').split('\n').map(x => x.trim()).filter(Boolean);
     const simili = ordina(inVetrina().filter(x => x.id !== p.id && ((mm && x.marchio_id === p.marchio_id) || x.categoria === p.categoria))).slice(0, 12);
@@ -292,7 +350,7 @@
 
     disegna(
       '<nav class="briciole"><a href="#/">Vetrina</a> › <a href="' + linkFiltri(f0, { cat: p.categoria }) + '">' + h(cat(p.categoria).nome) + '</a>' +
-        (mm ? ' › <a href="' + linkFiltri(f0, { m: [mm.id] }) + '">' + h(mm.nome) + '</a>' : '') + '</nav>' +
+        (mm ? ' › <a href="' + linkFiltri(f0, { cat: p.categoria, m: [mm.id] }) + '">' + h(mm.nome) + '</a>' : '') + '</nav>' +
       '<article class="prodotto" data-id="' + h(p.id) + '">' +
         '<div class="galleria">' +
           '<div class="galleria-scorri" id="scorri">' + (foto.length ? foto.map((x, i) => '<div class="galleria-foto" data-az="ingrandisci" data-i="' + i + '">' + fotoTag(x, true, p.nome) + '</div>').join('') : '<div class="galleria-foto">' + fotoTag(null) + '</div>') + '</div>' +
@@ -303,22 +361,23 @@
         '<div class="info">' +
           (mm ? '<a class="info-marchio" href="' + linkFiltri(f0, { m: [mm.id] }) + '">' + h(mm.nome) + '</a>' : '') +
           '<h1>' + h(p.nome) + '</h1>' +
-          '<div class="riquadro-prezzo">' + (numero(p.prezzo) != null ? '<b' + (sc ? ' class="saldo"' : '') + '>' + euro(p.prezzo) + '</b>' : '<b class="su-richiesta">Prezzo su richiesta</b>') +
-            (sc ? '<s>' + euro(p.prezzo_pieno) + '</s><span class="risparmio">-' + sc + '%</span>' : '') + '</div>' +
-          '<div class="etichette"><span>' + h(cat(p.categoria).nome) + '</span><span>' + h(gen(p.genere).nome) + '</span>' + (p.codice ? '<span>Cod. ' + h(p.codice) + '</span>' : '') + '</div>' +
+          (p.codice ? '<div class="codice-grande">Codice <b>' + h(p.codice) + '</b></div>' : '') +
+          (prezziVisibili() ? '<div class="riquadro-prezzo">' + prezzoHtml(p, true) + '</div>' : '') +
+          '<div class="etichette"><span>' + h(cat(p.categoria).nome) + '</span><span>' + h(gen(p.genere).nome) + '</span></div>' +
           (p.disponibile ? '' : '<div class="nota-esaurito">Al momento esaurito: puoi comunque chiedere quando torna.</div>') +
           scelta('Taglia', taglie) + scelta('Colore', colori) +
           '<div class="opzioni"><h4>Quantità</h4><div class="quantita"><button type="button" data-az="qta" data-d="-1">−</button><input id="qta" type="number" min="1" value="1" aria-label="Quantità"><button type="button" data-az="qta" data-d="1">+</button></div></div>' +
           '<div class="bottoni-acquisto">' +
-            '<button class="btn grande nero" data-az="aggiungi">' + icona('sacca') + ' Aggiungi ai scelti</button>' +
-            '<button class="btn grande verde" data-az="chiedi">' + icona('whatsapp') + ' Chiedi su WhatsApp</button></div>' +
+            '<button class="btn grande" data-az="aggiungi">' + icona('sacca') + ' Aggiungi alla mia lista</button>' +
+            (richiesteAttive() ? '<button class="btn grande contorno" data-az="chiedi">' + icona('posta') + ' Chiedi informazioni</button>' : '') +
+            (whatsappAttivo() ? '<button class="btn grande verde" data-az="chiedi-wa">' + icona('whatsapp') + ' WhatsApp</button>' : '') + '</div>' +
+          (!richiesteAttive() && !whatsappAttivo() ? '<div class="come-ordinare">' + icona('stella') + '<span>Ti piace? Dillo a <b>' + h(nomeNegozio()) + '</b> indicando il codice' + (p.codice ? ' <b>' + h(p.codice) + '</b>' : '') + '.</span></div>' : '') +
           (admin() ? '<a class="btn contorno largo" href="#/admin/prodotto/' + h(p.id) + '">' + icona('matita') + ' Modifica questo prodotto</a>' : '') +
           (p.descrizione ? '<section class="descrizione"><h3>Descrizione</h3>' + h(p.descrizione).split(/\n{2,}/).map(x => '<p>' + x.replace(/\n/g, '<br>') + '</p>').join('') + '</section>' : '') +
           (dettagli.length ? '<section class="descrizione"><h3>Dettagli</h3><ul>' + dettagli.map(d => '<li>' + h(d) + '</li>').join('') + '</ul></section>' : '') +
         '</div></article>' +
       (simili.length ? '<section class="blocco"><div class="blocco-testa"><h2>Potrebbe piacerti anche</h2></div><div class="fila">' + simili.map(scheda).join('') + '</div></section>' : '')
     );
-
     const sc2 = document.getElementById('scorri');
     if (sc2) sc2.addEventListener('scroll', () => {
       const i = Math.round(sc2.scrollLeft / sc2.clientWidth);
@@ -337,66 +396,86 @@
     if (serve('colore') && !x.colore) { avviso('Scegli il colore.', 'errore'); return null; }
     return { p, x };
   }
+  const articolo = (p, x) => ({ id: p.id, codice: p.codice || '', nome: p.nome, taglia: x.taglia || '', colore: x.colore || '', qta: x.qta, prezzo: numero(p.prezzo) });
   function rigaTesto(p, x) {
-    const mm = marchio(p.marchio_id);
     const extra = [x.taglia && 'taglia ' + x.taglia, x.colore && 'colore ' + x.colore].filter(Boolean).join(', ');
-    return '• ' + p.nome + (mm ? ' (' + mm.nome + ')' : '') + (p.codice ? ' [' + p.codice + ']' : '') + (extra ? ' – ' + extra : '') +
-      ' – ' + x.qta + ' pz' + (numero(p.prezzo) != null ? ' – ' + euro(p.prezzo * x.qta) : '') +
-      '\n  ' + location.origin + location.pathname + (S.codice ? '?v=' + S.codice : '') + '#/p/' + p.id;
+    return '• ' + (p.codice ? p.codice + ' – ' : '') + p.nome + (extra ? ' – ' + extra : '') + ' – ' + x.qta + ' pz';
   }
 
-  // ---------------------------------------------------------------- SCELTI (richiesta)
-  function paginaRichiesta() {
-    const r = richiesta();
+  // ---------------------------------------------------------------- LA MIA LISTA
+  function paginaLista() {
+    const r = lista();
     const tot = r.reduce((a, x) => { const p = S.prodotti.find(p => p.id === x.id); return a + (numero(p.prezzo) || 0) * x.qta; }, 0);
-    disegna('<div class="pagina stretta"><h1>I tuoi scelti</h1>' +
+    disegna('<div class="pagina stretta"><h1>La mia lista</h1>' +
       (r.length ? '<div class="lista-richiesta">' + r.map((x, i) => {
-        const p = S.prodotti.find(p => p.id === x.id), mm = marchio(p.marchio_id);
+        const p = S.prodotti.find(p => p.id === x.id);
         return '<div class="riga-richiesta"><a href="#/p/' + h(p.id) + '" class="rr-foto">' + fotoTag(p.foto && p.foto[0], false, p.nome) + '</a>' +
-          '<div class="rr-testo"><a href="#/p/' + h(p.id) + '"><b>' + h(p.nome) + '</b></a><small>' + [mm && h(mm.nome), x.taglia && 'Taglia ' + h(x.taglia), x.colore && h(x.colore)].filter(Boolean).join(' · ') + '</small>' +
-          '<div class="rr-prezzo">' + (numero(p.prezzo) != null ? euro(p.prezzo) : 'Prezzo su richiesta') + '</div></div>' +
+          '<div class="rr-testo">' + (p.codice ? '<span class="rr-codice">' + h(p.codice) + '</span>' : '') + '<a href="#/p/' + h(p.id) + '"><b>' + h(p.nome) + '</b></a>' +
+          '<small>' + [x.taglia && 'Taglia ' + h(x.taglia), x.colore && h(x.colore)].filter(Boolean).join(' · ') + '</small>' +
+          (prezziVisibili() ? '<div class="rr-prezzo">' + (numero(p.prezzo) != null ? euro(p.prezzo) : 'Prezzo su richiesta') + '</div>' : '') + '</div>' +
           '<div class="quantita piccola"><button data-az="rr-qta" data-i="' + i + '" data-d="-1">−</button><span>' + x.qta + '</span><button data-az="rr-qta" data-i="' + i + '" data-d="1">+</button></div>' +
           '<button class="icona-btn" data-az="rr-togli" data-i="' + i + '" aria-label="Togli">' + icona('cestino') + '</button></div>';
       }).join('') + '</div>' +
-      '<div class="totale"><span>Totale indicativo</span><b>' + euro(tot) + '</b></div>' +
-      '<p class="nota">Disponibilità, spedizione e pagamento si concordano su WhatsApp.</p>' +
-      '<button class="btn grande verde largo" data-az="invia-richiesta">' + icona('whatsapp') + ' Invia la scelta su WhatsApp</button>' +
-      '<button class="btn contorno largo" data-az="svuota">Svuota</button>'
-      : '<div class="vuoto">' + icona('sacca') + '<p>Non hai ancora scelto niente.</p><a class="btn" href="#/">Guarda la vetrina</a></div>') +
+      (prezziVisibili() && tot ? '<div class="totale"><span>Totale indicativo</span><b>' + euro(tot) + '</b></div>' : '') +
+      (richiesteAttive() ? '<button class="btn grande largo" data-az="invia-lista">' + icona('posta') + ' Invia la lista a ' + h(nomeNegozio()) + '</button>' : '') +
+      (whatsappAttivo() ? '<button class="btn grande verde largo" data-az="invia-lista-wa">' + icona('whatsapp') + ' Mandala su WhatsApp</button>' : '') +
+      (!richiesteAttive() && !whatsappAttivo() ? '<div class="come-ordinare">' + icona('stella') + '<span>Per ordinare, mostra questa lista a <b>' + h(nomeNegozio()) + '</b> (o fanne una foto dello schermo) oppure dille i codici.</span></div>' : '') +
+      '<button class="btn contorno largo" data-az="svuota">Svuota la lista</button>'
+      : '<div class="vuoto">' + icona('sacca') + '<p>La lista è vuota. Premi “Aggiungi alla mia lista” sui prodotti che ti piacciono.</p><a class="btn" href="#/">Guarda la vetrina</a></div>') +
       '</div>');
+  }
+
+  // modulo "chiedi / invia" (solo se le richieste sono accese)
+  function apriModulo(articoli, titolo) {
+    let memo = {}; try { memo = JSON.parse(localStorage.getItem('vetrina-io')) || {}; } catch (e) { /* niente */ }
+    const m = document.createElement('div');
+    m.className = 'modale';
+    m.innerHTML = '<form class="modale-scheda modulo compatto" data-form="richiesta">' +
+      '<button type="button" class="icona-btn modale-chiudi" data-az="chiudi-modale" aria-label="Chiudi">' + icona('chiudi') + '</button>' +
+      '<h2>' + h(titolo) + '</h2>' +
+      (articoli.length ? '<ul class="modale-articoli">' + articoli.map(a => '<li><b>' + h(a.codice) + '</b> ' + h(a.nome) + (a.taglia ? ' · ' + h(a.taglia) : '') + (a.colore ? ' · ' + h(a.colore) : '') + ' · ' + a.qta + ' pz</li>').join('') + '</ul>' : '') +
+      '<label class="campo largo">Il tuo nome *<input name="nome" required maxlength="80" value="' + h(memo.nome || '') + '" autocomplete="name"></label>' +
+      '<label class="campo largo">Come ti ricontatta <small>(facoltativo: telefono, email o Instagram)</small><input name="contatto" maxlength="120" value="' + h(memo.contatto || '') + '"></label>' +
+      '<label class="campo largo">Messaggio<textarea name="messaggio" rows="3" maxlength="2000" placeholder="Domande, taglie, colori…"></textarea></label>' +
+      '<button class="btn grande largo">Invia</button></form>';
+    m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+    m._articoli = articoli;
+    document.body.appendChild(m);
+    m.querySelector('input[name="nome"]').focus();
   }
 
   // ---------------------------------------------------------------- AMMINISTRAZIONE
   function adminGuscio(voce, html) {
-    const daDescr = S.prodotti.filter(p => p.da_descrivere).length;
-    const voci = [['', 'Prodotti', 'tutti'], ['carica', 'Carica foto', 'foto'], ['marchi', 'Marchi', 'marchio'], ['impostazioni', 'Link e impostazioni', 'ingranaggio']];
+    const daDescr = S.prodotti.filter(p => p.da_descrivere).length, nuove = nuoveRichieste();
+    const voci = [['', 'Prodotti', 'tutti', daDescr, 'grigio'], ['carica', 'Carica foto', 'foto'], ['richieste', 'Richieste', 'posta', nuove, ''],
+      ['marchi', 'Marchi', 'marchio'], ['categorie', 'Categorie', 'sacca'], ['aspetto', 'Aspetto', 'pennello'], ['impostazioni', 'Link e impostazioni', 'ingranaggio']];
     disegna('<div class="admin"><nav class="admin-menu">' +
       voci.map(v => '<a class="' + (voce === v[0] ? 'sel' : '') + '" href="#/admin' + (v[0] ? '/' + v[0] : '') + '">' + icona(v[2]) + v[1] +
-        (v[0] === '' && daDescr ? '<b class="pallino grigio in-linea" title="da descrivere">' + daDescr + '</b>' : '') + '</a>').join('') +
+        (v[3] ? '<b class="pallino in-linea ' + v[4] + '">' + v[3] + '</b>' : '') + '</a>').join('') +
       '<button class="admin-esci" data-az="esci">' + icona('esci') + 'Esci</button>' +
       '</nav><section class="admin-corpo">' + html + '</section></div>');
   }
 
   function adminProdotti(par) {
     const vista = par.get('vista') || '';
-    const lista = ordina(S.prodotti, 'nuovi').filter(p => vista === 'descrivere' ? p.da_descrivere : vista === 'nascosti' ? p.visibile === false : true);
+    const l = ordina(S.prodotti, 'nuovi').filter(p => vista === 'descrivere' ? p.da_descrivere : vista === 'nascosti' ? p.visibile === false : true);
     const nDescr = S.prodotti.filter(p => p.da_descrivere).length, nNasc = S.prodotti.filter(p => p.visibile === false).length;
     adminGuscio('', '<div class="admin-testa"><h1>Prodotti <small>' + S.prodotti.length + '</small></h1><a class="btn" href="#/admin/carica">' + icona('foto') + ' Carica foto</a></div>' +
       '<div class="schede-genere piccole"><a class="' + (!vista ? 'sel' : '') + '" href="#/admin">Tutti</a>' +
         '<a class="' + (vista === 'descrivere' ? 'sel' : '') + '" href="#/admin?vista=descrivere">Da descrivere <i>' + nDescr + '</i></a>' +
         '<a class="' + (vista === 'nascosti' ? 'sel' : '') + '" href="#/admin?vista=nascosti">Nascosti <i>' + nNasc + '</i></a></div>' +
       '<div class="admin-barra"><input type="search" id="admin-cerca" placeholder="Cerca per nome, marchio, codice…">' +
-      '<select id="admin-cat"><option value="">Tutte le categorie</option>' + C.categorie.map(c => '<option value="' + c.id + '">' + h(c.nome) + '</option>').join('') + '</select>' +
+      '<select id="admin-cat"><option value="">Tutte le categorie</option>' + categorie().map(c => '<option value="' + h(c.id) + '">' + h(c.nome) + '</option>').join('') + '</select>' +
       '<a class="btn contorno" href="#/admin/prodotto/nuovo">' + icona('piu') + ' Scheda vuota</a></div>' +
-      '<p class="nota">Il prezzo si cambia direttamente qui: scrivi e premi Invio. “Da descrivere” vuol dire che nome e descrizione li scrive l\'aiutante.</p>' +
-      (lista.length ? '<div class="admin-lista">' + lista.map(p => {
+      '<p class="nota">Il prezzo si cambia direttamente qui: scrivi e premi Invio. “Da descrivere” vuol dire che titolo e descrizione li scrive l\'aiutante.</p>' +
+      (l.length ? '<div class="admin-lista">' + l.map(p => {
         const mm = marchio(p.marchio_id);
         const testo = semplice([p.nome, mm && mm.nome, p.codice].join(' '));
         return '<div class="admin-riga" data-id="' + h(p.id) + '" data-testo="' + h(testo) + '" data-cat="' + h(p.categoria) + '">' +
           '<a class="ar-foto" href="#/admin/prodotto/' + h(p.id) + '">' + fotoTag(p.foto && p.foto[0], false, '') + '</a>' +
           '<div class="ar-testo"><a href="#/admin/prodotto/' + h(p.id) + '"><b>' + h(p.nome) + '</b></a>' +
             (p.da_descrivere ? '<span class="etichetta-descr">da descrivere</span>' : '') + (p.visibile === false ? '<span class="etichetta-descr nascosto">nascosto</span>' : '') +
-            '<small>' + [mm ? h(mm.nome) : '', h(cat(p.categoria).nome), h(gen(p.genere).nome), p.foto && p.foto.length + ' foto'].filter(Boolean).join(' · ') + '</small></div>' +
+            '<small>' + [p.codice && '<b>' + h(p.codice) + '</b>', mm ? h(mm.nome) : '', h(cat(p.categoria).nome), h(gen(p.genere).nome), p.foto && p.foto.length + ' foto'].filter(Boolean).join(' · ') + '</small></div>' +
           '<label class="ar-prezzo">€ <input type="number" step="0.01" min="0" inputmode="decimal" value="' + (numero(p.prezzo) != null ? p.prezzo : '') + '" data-az="prezzo-veloce" placeholder="—"></label>' +
           '<div class="ar-interruttori">' +
             '<label class="interruttore"><input type="checkbox" data-az="campo-veloce" data-campo="disponibile"' + (p.disponibile ? ' checked' : '') + '><span></span>Disponibile</label>' +
@@ -405,42 +484,47 @@
             '<a class="icona-btn" href="#/admin/prodotto/' + h(p.id) + '" title="Modifica">' + icona('matita') + '</a>' +
             '<button class="icona-btn pericolo" data-az="elimina-prodotto" title="Elimina">' + icona('cestino') + '</button></div></div>';
       }).join('') + '</div>' : '<div class="vuoto"><p>' + (vista ? 'Nessuno.' : 'La vetrina è vuota: comincia da “Carica foto”.') + '</p></div>'));
-
     const cerca = document.getElementById('admin-cerca'), sel = document.getElementById('admin-cat');
     const applica = () => {
       const q = semplice(cerca.value).split(/\s+/).filter(Boolean);
-      document.querySelectorAll('.admin-riga').forEach(r => {
-        r.hidden = (sel.value && r.dataset.cat !== sel.value) || !q.every(w => r.dataset.testo.includes(w));
-      });
+      document.querySelectorAll('.admin-riga').forEach(r => { r.hidden = (sel.value && r.dataset.cat !== sel.value) || !q.every(w => r.dataset.testo.includes(w)); });
     };
     cerca.addEventListener('input', applica);
     sel.addEventListener('change', applica);
   }
 
   // ---------- carica foto (pensata per il telefono) ----------
-  const carico = { cat: '', gen: 'donna', stesso: false, prezzo: '', lavori: [], attivo: false };
+  const carico = { cat: '', gen: 'donna', marchio: '', nome: '', stesso: false, prezzo: '', lavori: [], attivo: false };
+  const nomeCarico = () => carico.nome.trim() || [cat(carico.cat).uno || cat(carico.cat).nome, marchio(carico.marchio) && marchio(carico.marchio).nome].filter(Boolean).join(' ');
   function adminCarica() {
     const pronti = carico.lavori.filter(l => l.stato === 'fatto').length, errori = carico.lavori.filter(l => l.stato === 'errore').length;
+    const spento = !carico.cat || carico.attivo;
     adminGuscio('carica', '<div class="admin-testa"><h1>Carica foto</h1></div>' +
       '<div class="carica">' +
         '<section class="carica-passo"><h3><span>1</span> Che cosa sono?</h3><div class="scelta-categorie">' +
-          C.categorie.map(c => '<button type="button" class="scelta-cat' + (carico.cat === c.id ? ' sel' : '') + '" data-az="carica-cat" data-id="' + c.id + '">' + icona(c.icona) + '<span>' + h(c.nome) + '</span></button>').join('') +
+          categorie().map(c => '<button type="button" class="scelta-cat' + (carico.cat === c.id ? ' sel' : '') + '" data-az="carica-cat" data-id="' + h(c.id) + '">' + icona(c.icona) + '<span>' + h(c.nome) + '</span></button>').join('') +
         '</div></section>' +
         '<section class="carica-passo"><h3><span>2</span> Per chi?</h3><div class="chips">' +
           C.generi.map(g => '<button type="button" class="chip grande' + (carico.gen === g.id ? ' sel' : '') + '" data-az="carica-gen" data-id="' + g.id + '">' + h(g.nome) + '</button>').join('') +
         '</div></section>' +
-        '<section class="carica-passo"><h3><span>3</span> Le foto</h3>' +
+        '<section class="carica-passo"><h3><span>3</span> Marchio <small>(se lo sai)</small></h3><div class="chips">' +
+          '<button type="button" class="chip grande' + (!carico.marchio ? ' sel' : '') + '" data-az="carica-marchio" data-id="">Non lo so</button>' +
+          S.marchi.map(m => '<button type="button" class="chip grande' + (carico.marchio === m.id ? ' sel' : '') + '" data-az="carica-marchio" data-id="' + h(m.id) + '">' + h(m.nome) + '</button>').join('') +
+          '<button type="button" class="chip grande tratteggiato" data-az="carica-marchio-nuovo">+ Nuovo marchio</button>' +
+        '</div></section>' +
+        '<section class="carica-passo"><h3><span>4</span> Le foto</h3>' +
           '<label class="interruttore"><input type="checkbox" data-az="carica-stesso"' + (carico.stesso ? ' checked' : '') + '><span></span>Sono tutte lo <b>stesso</b> prodotto (più angolazioni)</label>' +
           '<p class="nota">' + (carico.stesso ? 'Tutte le foto che scegli diventano <b>un solo prodotto</b>.' : 'Ogni foto diventa <b>un prodotto</b>. Puoi sceglierne tante insieme.') + '</p>' +
-          '<label class="campo stretto">Prezzo per tutte (facoltativo)<input type="number" inputmode="decimal" step="0.01" min="0" data-az="carica-prezzo" value="' + h(carico.prezzo) + '" placeholder="lo metti dopo"></label>' +
-          '<label class="btn grande largo scegli-foto' + (!carico.cat || carico.attivo ? ' spento' : '') + '">' + icona('foto') + (carico.attivo ? ' Sto caricando…' : ' Scegli le foto') +
-            '<input type="file" accept="image/*" multiple data-az="carica-file" hidden' + (!carico.cat || carico.attivo ? ' disabled' : '') + '></label>' +
+          '<div class="due-campi"><label class="campo">Nome <small>(facoltativo)</small><input data-az="carica-nome" maxlength="80" value="' + h(carico.nome) + '" placeholder="' + h(carico.cat ? nomeCarico() : 'es. Borsa Gucci') + '"></label>' +
+          '<label class="campo">Prezzo <small>(facoltativo)</small><input type="number" inputmode="decimal" step="0.01" min="0" data-az="carica-prezzo" value="' + h(carico.prezzo) + '" placeholder="lo metti dopo"></label></div>' +
+          '<label class="btn grande largo scegli-foto' + (spento ? ' spento' : '') + '">' + icona('foto') + (carico.attivo ? ' Sto caricando…' : ' Scegli le foto') +
+            '<input type="file" accept="image/*" multiple data-az="carica-file" hidden' + (spento ? ' disabled' : '') + '></label>' +
           (!carico.cat ? '<p class="nota centro">Prima scegli che cosa sono (passo 1).</p>' : '') +
         '</section>' +
         (carico.lavori.length ? '<section class="carica-passo"><h3>Caricate: ' + pronti + ' di ' + carico.lavori.length + (errori ? ' · <span class="rosso">' + errori + ' non riuscite</span>' : '') + '</h3>' +
           '<div class="carica-griglia">' + carico.lavori.map(l => '<div class="cg ' + l.stato + '">' + (l.anteprima ? '<img src="' + l.anteprima + '" alt="">' : '') +
             '<span>' + (l.stato === 'fatto' ? icona('spunta') : l.stato === 'errore' ? '!' : '<i class="rotella"></i>') + '</span></div>').join('') + '</div>' +
-          (!carico.attivo && pronti ? '<div class="box-ok">Fatto! Le trovi in vetrina. Titolo, marchio e descrizione li aggiunge l\'aiutante: finché non ci sono, si vedono col nome della categoria.</div>' +
+          (!carico.attivo && pronti ? '<div class="box-ok">Fatto! Le trovi in vetrina. La descrizione la aggiunge l\'aiutante: nell\'elenco dei prodotti sono segnate “da descrivere”.</div>' +
             '<div class="modulo-piede"><button class="btn contorno" data-az="carica-pulisci">Carica altre</button><a class="btn" href="#/">Vai alla vetrina</a></div>' : '') +
         '</section>' : '') +
       '</div>');
@@ -448,13 +532,13 @@
   async function caricaFile(files) {
     if (!files.length) return;
     carico.attivo = true;
-    const prezzo = numero(carico.prezzo), cat0 = carico.cat, gen0 = carico.gen, stesso = carico.stesso;
+    const prezzo = numero(carico.prezzo), cat0 = carico.cat, gen0 = carico.gen, marchio0 = carico.marchio || null, nome0 = nomeCarico(), stesso = carico.stesso;
     const lavori = files.map(f => ({ file: f, stato: 'attesa', anteprima: URL.createObjectURL(f) }));
     carico.lavori = carico.lavori.concat(lavori);
     const ridisegna = () => { if (leggiIndirizzo().pezzi[1] === 'carica') adminCarica(); };
     ridisegna();
     const idsInsieme = [];
-    const nuovo = foto => ({ nome: cat(cat0).uno || 'Nuovo arrivo', marchio_id: null, categoria: cat0, genere: gen0, prezzo, prezzo_pieno: null, descrizione: '', dettagli: '', taglie: '', colori: '', foto, disponibile: true, in_evidenza: false, visibile: true, da_descrivere: true, codice: '', ordine: 0 });
+    const nuovo = foto => ({ nome: nome0 || 'Nuovo arrivo', marchio_id: marchio0, categoria: cat0, genere: gen0, prezzo, prezzo_pieno: null, descrizione: '', dettagli: '', taglie: '', colori: '', foto, disponibile: true, in_evidenza: false, visibile: true, da_descrivere: true, codice: '', ordine: 0 });
     for (const l of lavori) {
       try {
         const id = await D.caricaFoto(l.file);
@@ -477,22 +561,22 @@
   function adminProdotto(id) {
     if (!bozza || bozza.idPagina !== id) {
       const base = id === 'nuovo'
-        ? { nome: '', marchio_id: null, categoria: C.categorie[0].id, genere: C.generi[0].id, prezzo: null, prezzo_pieno: null, descrizione: '', dettagli: '', taglie: '', colori: '', foto: [], disponibile: true, in_evidenza: false, visibile: true, da_descrivere: false, codice: '', ordine: 0 }
+        ? { nome: '', marchio_id: null, categoria: categorie()[0].id, genere: C.generi[0].id, prezzo: null, prezzo_pieno: null, descrizione: '', dettagli: '', taglie: '', colori: '', foto: [], disponibile: true, in_evidenza: false, visibile: true, da_descrivere: false, codice: '', ordine: 0 }
         : S.prodotti.find(p => p.id === id);
       if (!base) return adminGuscio('', '<div class="vuoto"><p>Prodotto non trovato.</p><a class="btn" href="#/admin">Torna ai prodotti</a></div>');
       bozza = { idPagina: id, p: JSON.parse(JSON.stringify(base)), caricateOra: [], daTogliere: [], inCaricamento: 0 };
     }
     const p = bozza.p;
-    const opz = (lista, val) => lista.map(x => '<option value="' + h(x.id) + '"' + (x.id === val ? ' selected' : '') + '>' + h(x.nome) + '</option>').join('');
+    const opz = (l, val) => l.map(x => '<option value="' + h(x.id) + '"' + (x.id === val ? ' selected' : '') + '>' + h(x.nome) + '</option>').join('');
     adminGuscio('', '<div class="admin-testa"><h1>' + (id === 'nuovo' ? 'Scheda nuova' : 'Modifica prodotto') + '</h1><a class="btn contorno" href="#/admin" data-az="annulla-bozza">Annulla</a></div>' +
       '<form class="modulo" data-form="prodotto" autocomplete="off">' +
         '<fieldset><legend>Foto</legend><p class="nota">La prima foto è la copertina. Le frecce cambiano l\'ordine.</p>' +
           '<div class="foto-bozza" id="foto-bozza">' + fotoBozza() + '</div></fieldset>' +
         '<fieldset><legend>Il prodotto</legend>' +
-          '<label class="campo largo">Nome *<input name="nome" required maxlength="140" value="' + h(p.nome) + '" placeholder="Es. Sneaker in pelle bianca"></label>' +
+          '<label class="campo largo">Titolo breve *<input name="nome" required maxlength="140" value="' + h(p.nome) + '" placeholder="Es. Borsa Gucci"></label>' +
           '<label class="campo">Marchio<select name="marchio_id" data-az="scegli-marchio"><option value="">— senza marchio —</option>' + opz(S.marchi, p.marchio_id) + '<option value="__nuovo">+ Nuovo marchio…</option></select></label>' +
-          '<label class="campo">Codice<input name="codice" maxlength="40" value="' + h(p.codice) + '" placeholder="facoltativo"></label>' +
-          '<label class="campo">Categoria *<select name="categoria">' + opz(C.categorie, p.categoria) + '</select></label>' +
+          '<label class="campo">Codice <small>(vuoto = automatico)</small><input name="codice" maxlength="40" value="' + h(p.codice) + '"></label>' +
+          '<label class="campo">Categoria *<select name="categoria">' + opz(categorie(), p.categoria) + '</select></label>' +
           '<label class="campo">Genere *<select name="genere">' + opz(C.generi, p.genere) + '</select></label>' +
         '</fieldset>' +
         '<fieldset><legend>Prezzo</legend>' +
@@ -505,7 +589,7 @@
         '</fieldset>' +
         '<fieldset><legend>Descrizione</legend>' +
           '<label class="campo largo">Descrizione<textarea name="descrizione" rows="5" placeholder="Com\'è, a chi è adatto, perché piace">' + h(p.descrizione) + '</textarea></label>' +
-          '<label class="campo largo">Dettagli (uno per riga)<textarea name="dettagli" rows="4" placeholder="Materiale: pelle&#10;Suola in gomma">' + h(p.dettagli) + '</textarea></label>' +
+          '<label class="campo largo">Dettagli (uno per riga)<textarea name="dettagli" rows="4" placeholder="Materiale: pelle&#10;Misure: 30 x 20 cm">' + h(p.dettagli) + '</textarea></label>' +
         '</fieldset>' +
         '<fieldset><legend>Visibilità</legend>' +
           '<label class="interruttore"><input type="checkbox" name="visibile"' + (p.visibile !== false ? ' checked' : '') + '><span></span>Visibile in vetrina</label>' +
@@ -526,10 +610,7 @@
       (bozza.inCaricamento ? '<div class="fb attesa"><div class="fb-img"><span class="rotella"></span></div><small>Carico ' + bozza.inCaricamento + '…</small></div>' : '') +
       '<label class="fb aggiungi">' + icona('piu') + '<span>Aggiungi foto</span><input type="file" accept="image/*" multiple data-az="carica-foto" hidden></label>';
   }
-  function ridisegnaFotoBozza() {
-    const el = document.getElementById('foto-bozza');
-    if (el) el.innerHTML = fotoBozza();
-  }
+  function ridisegnaFotoBozza() { const el = document.getElementById('foto-bozza'); if (el) el.innerHTML = fotoBozza(); }
   function leggiModulo(form) {
     const v = n => form.elements[n].value.trim();
     Object.assign(bozza.p, {
@@ -547,6 +628,35 @@
     if (via.length) try { await D.eliminaFoto(via); } catch (e) { console.warn(e); }
   }
 
+  // ---------- richieste ----------
+  function contattoHtml(c) {
+    const t = String(c || '').trim();
+    if (!t) return '<i class="nota">nessun contatto lasciato</i>';
+    const cifre = t.replace(/[^\d+]/g, '');
+    if (/^@|instagram/i.test(t)) return '<a class="link" target="_blank" rel="noopener" href="https://instagram.com/' + encodeURIComponent(t.replace(/^@|.*instagram\.com\//i, '')) + '">' + h(t) + '</a>';
+    if (/\S+@\S+\.\S+/.test(t)) return '<a class="link" href="mailto:' + h(t) + '">' + h(t) + '</a>';
+    if (cifre.replace('+', '').length >= 8) return h(t) + ' · <a class="link" href="tel:' + h(cifre) + '">chiama</a>';
+    return h(t);
+  }
+  function adminRichieste() {
+    const r = S.richieste;
+    adminGuscio('richieste', '<div class="admin-testa"><h1>Richieste <small>' + r.length + '</small></h1><button class="btn contorno" data-az="aggiorna-richieste">Aggiorna</button></div>' +
+      (!richiesteAttive() ? '<div class="box-info">Le richieste dalla vetrina sono <b>spente</b>: i clienti ti dicono i codici a voce. Puoi accenderle in <a class="link" href="#/admin/impostazioni">Link e impostazioni</a>.</div>' : '') +
+      (r.length ? r.map(x => '<article class="richiesta' + (x.letta ? ' letta' : '') + '" data-id="' + h(x.id) + '">' +
+        '<div class="richiesta-testa"><b>' + h(x.nome) + '</b>' + (x.letta ? '' : '<span class="etichetta-nuova">nuova</span>') + '<small>' + dataBreve(x.creato) + '</small></div>' +
+        '<div class="richiesta-contatto">' + contattoHtml(x.contatto) + '</div>' +
+        (x.messaggio ? '<p class="richiesta-msg">' + h(x.messaggio) + '</p>' : '') +
+        ((x.articoli || []).length ? '<ul class="richiesta-articoli">' + x.articoli.map(a => {
+          const p = S.prodotti.find(p => p.id === a.id);
+          return '<li>' + (p ? '<a href="#/p/' + h(p.id) + '" class="ra-foto">' + fotoTag(p.foto && p.foto[0], false, '') + '</a>' : '') +
+            '<span><b>' + h(a.codice) + '</b> ' + h(a.nome) + '<small>' + [a.taglia && 'taglia ' + h(a.taglia), a.colore && h(a.colore), a.qta + ' pz'].filter(Boolean).join(' · ') + '</small></span></li>';
+        }).join('') + '</ul>' : '') +
+        '<div class="richiesta-azioni"><button class="btn piccolo contorno" data-az="segna-richiesta">' + (x.letta ? 'Segna da leggere' : 'Segna come letta') + '</button>' +
+          '<button class="icona-btn pericolo" data-az="elimina-richiesta" title="Elimina">' + icona('cestino') + '</button></div></article>').join('')
+        : '<div class="vuoto"><p>Nessuna richiesta.</p></div>'));
+  }
+
+  // ---------- marchi ----------
   function adminMarchi() {
     adminGuscio('marchi', '<div class="admin-testa"><h1>Marchi <small>' + S.marchi.length + '</small></h1></div>' +
       '<form class="admin-barra" data-form="nuovo-marchio"><input name="nome" placeholder="Nome del nuovo marchio" required maxlength="60"><button class="btn">' + icona('piu') + ' Aggiungi</button></form>' +
@@ -558,6 +668,70 @@
       }).join('') + '</div>' : ''));
   }
 
+  // ---------- categorie ----------
+  let catBozza = null;
+  function adminCategorie() {
+    if (!catBozza) catBozza = JSON.parse(JSON.stringify(categorie())).map(c => Object.assign({ visibile: true }, c));
+    const contaCat = id => S.prodotti.filter(p => p.categoria === id).length;
+    adminGuscio('categorie', '<div class="admin-testa"><h1>Categorie</h1></div>' +
+      '<p class="nota">Cambia nomi e icone, riordinale con le frecce, nascondi quelle che non usi. “Titolo provvisorio” è il nome che hanno le foto appena caricate. Alla fine premi Salva.</p>' +
+      '<div class="admin-lista">' + catBozza.map((c, i) => '<div class="admin-riga categoria" data-i="' + i + '">' +
+        '<span class="cat-ico piccola">' + icona(c.icona) + '</span>' +
+        '<div class="cat-campi"><label class="campo">Nome<input data-az="cat-campo" data-campo="nome" value="' + h(c.nome) + '" maxlength="40"></label>' +
+          '<label class="campo">Titolo provvisorio<input data-az="cat-campo" data-campo="uno" value="' + h(c.uno || '') + '" maxlength="40"></label>' +
+          '<label class="campo">Icona<select data-az="cat-campo" data-campo="icona">' + ICONE_CATEGORIA.map(x => '<option value="' + x[0] + '"' + (x[0] === c.icona ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select></label></div>' +
+        '<label class="interruttore"><input type="checkbox" data-az="cat-campo" data-campo="visibile"' + (c.visibile !== false ? ' checked' : '') + '><span></span>Visibile</label>' +
+        '<small>' + contaCat(c.id) + ' prodotti</small>' +
+        '<div class="ar-azioni"><button class="icona-btn" data-az="cat-su"' + (i === 0 ? ' disabled' : '') + ' title="Su">' + icona('su') + '</button>' +
+          '<button class="icona-btn" data-az="cat-giu"' + (i === catBozza.length - 1 ? ' disabled' : '') + ' title="Giù">' + icona('giu') + '</button>' +
+          '<button class="icona-btn pericolo" data-az="cat-togli" title="Elimina">' + icona('cestino') + '</button></div></div>').join('') + '</div>' +
+      '<form class="admin-barra" data-form="nuova-categoria"><input name="nome" placeholder="Nuova categoria (es. Orologi)" required maxlength="40"><button class="btn contorno">' + icona('piu') + ' Aggiungi</button></form>' +
+      '<div class="modulo-piede"><button class="btn grande" data-az="cat-salva">' + icona('spunta') + ' Salva le categorie</button><button class="btn contorno" data-az="cat-annulla">Annulla le modifiche</button></div>');
+  }
+
+  // ---------- aspetto ----------
+  let aspBozza = null;
+  function adminAspetto() {
+    if (!aspBozza) aspBozza = asp();
+    const a = aspBozza;
+    const scelta = (campo, voci) => '<div class="chips">' + voci.map(v => '<button type="button" class="chip grande' + (String(a[campo]) === String(v[0]) ? ' sel' : '') + '" data-az="asp-scegli" data-campo="' + campo + '" data-valore="' + v[0] + '">' + v[1] + '</button>').join('') + '</div>';
+    const immagine = (campo, testo) => '<div class="asp-immagine">' +
+      (a[campo] ? '<img src="' + h(D.urlFoto(a[campo], false)) + '" alt=""><button type="button" class="btn piccolo contorno" data-az="asp-togli-img" data-campo="' + campo + '">Togli</button>' : '<div class="senza-foto">' + icona('foto') + '</div>') +
+      '<label class="btn piccolo">' + icona('foto') + ' ' + testo + '<input type="file" accept="image/*" data-az="asp-img" data-campo="' + campo + '" hidden></label></div>';
+    adminGuscio('aspetto', '<div class="admin-testa"><h1>Aspetto</h1></div>' +
+      '<p class="nota">Le modifiche si vedono subito qui intorno. Diventano definitive per tutti solo quando premi <b>Salva</b>.</p>' +
+      '<div class="modulo">' +
+        '<fieldset><legend>Logo e immagine in alto</legend>' +
+          '<div class="campo">Logo <small>(al posto del nome, in alto a sinistra)</small>' + immagine('logo', 'Scegli il logo') + '</div>' +
+          '<div class="campo">Immagine della vetrina <small>(sotto al nome, nella fascia grande)</small>' + immagine('immagine', 'Scegli l\'immagine') + '</div>' +
+        '</fieldset>' +
+        '<fieldset><legend>Colori</legend>' +
+          '<div class="campo largo">Tavolozze pronte<div class="tavolozze">' + TAVOLOZZE.map((t, i) => '<button type="button" class="tavolozza" data-az="asp-tavolozza" data-i="' + i + '"><span style="background:' + t[1] + '"></span><span style="background:' + t[2] + '"></span><span style="background:' + t[3] + '"></span>' + h(t[0]) + '</button>').join('') + '</div></div>' +
+          '<label class="campo colore">Colore principale<input type="color" data-az="asp-colore" data-campo="principale" value="' + h(a.principale) + '"></label>' +
+          '<label class="campo colore">Sconti e prezzi in saldo<input type="color" data-az="asp-colore" data-campo="accento" value="' + h(a.accento) + '"></label>' +
+          '<label class="campo colore">Fondo della fascia in alto<input type="color" data-az="asp-colore" data-campo="banner" value="' + h(a.banner) + '"></label>' +
+        '</fieldset>' +
+        '<fieldset><legend>Scritte</legend><div class="campo largo">Carattere' +
+          '<div class="caratteri">' + Object.entries(CARATTERI).map(([k, F]) => '<button type="button" class="carattere' + (a.carattere === k ? ' sel' : '') + '" data-az="asp-scegli" data-campo="carattere" data-valore="' + k + '" style="font-family:' + h(F.titoli) + '"><b>Aa</b>' + h(F.nome) + '</button>').join('') + '</div></div>' +
+        '</fieldset>' +
+        '<fieldset><legend>Foto</legend>' +
+          '<div class="campo">Forma delle foto' + scelta('forma', [['verticale', 'Verticali (moda)'], ['quadrata', 'Quadrate']]) + '</div>' +
+          '<div class="campo">Foto per riga sul telefono' + scelta('colonne', [[2, '2 grandi'], [3, '3 piccole']]) + '</div>' +
+        '</fieldset>' +
+        '<fieldset><legend>Cosa mostrare</legend>' +
+          '<label class="interruttore"><input type="checkbox" data-az="asp-spunta" data-campo="prezzi"' + (a.prezzi !== false ? ' checked' : '') + '><span></span>Mostra i prezzi</label>' +
+          '<label class="interruttore"><input type="checkbox" data-az="asp-spunta" data-campo="evidenza"' + (a.evidenza !== false ? ' checked' : '') + '><span></span>Mostra la fila “In evidenza”</label>' +
+        '</fieldset>' +
+        '<div class="modulo-piede"><button class="btn grande" data-az="asp-salva">' + icona('spunta') + ' Salva l\'aspetto</button>' +
+          '<button class="btn contorno" data-az="asp-annulla">Annulla le modifiche</button><button class="btn contorno" data-az="asp-base">Torna all\'originale</button></div>' +
+      '</div>');
+  }
+  function provaAspetto() { applicaAspetto(aspBozza); const l = document.querySelector('.logo'); if (l) l.outerHTML = logoHtmlDa(aspBozza); }
+  function logoHtmlDa(a) {
+    return '<a class="logo" href="#/" title="' + h(nomeNegozio()) + '">' + (a.logo ? '<img src="' + h(D.urlFoto(a.logo, false)) + '" alt="' + h(nomeNegozio()) + '">' : h(nomeNegozio())) + '</a>';
+  }
+
+  // ---------- link e impostazioni ----------
   function adminImpostazioni() {
     const i = S.imp, link = linkVetrina();
     adminGuscio('impostazioni', '<div class="admin-testa"><h1>Link e impostazioni</h1></div>' +
@@ -573,23 +747,37 @@
         '<label class="campo largo">Nome della vetrina<input name="nome_negozio" maxlength="60" value="' + h(i.nome_negozio) + '"></label>' +
         '<label class="campo largo">Frase sotto il nome<input name="sottotitolo" maxlength="120" value="' + h(i.sottotitolo) + '"></label>' +
         '<label class="campo largo">Messaggio di benvenuto<textarea name="messaggio_benvenuto" rows="3" maxlength="400">' + h(i.messaggio_benvenuto) + '</textarea></label>' +
-        '<label class="campo">Il tuo numero WhatsApp (per ricevere le scelte)<input name="whatsapp" inputmode="tel" value="' + h(i.whatsapp) + '" placeholder="Es. 333 1234567"></label>' +
+      '</fieldset>' +
+      '<fieldset><legend>Come ti fanno sapere cosa vogliono</legend>' +
+        '<p class="nota">Di partenza è tutto <b>spento</b>: i clienti mettono i prodotti nella loro lista e ti dicono i <b>codici</b> a voce.</p>' +
+        '<label class="interruttore"><input type="checkbox" name="richieste_attive"' + (i.richieste_attive ? ' checked' : '') + '><span></span>Ricevi richieste dalla vetrina (arrivano in “Richieste”, il tuo numero resta privato)</label>' +
+        '<label class="interruttore"><input type="checkbox" name="mostra_whatsapp"' + (i.mostra_whatsapp ? ' checked' : '') + '><span></span>Mostra il pulsante WhatsApp (attenzione: il tuo numero diventa visibile)</label>' +
+        '<label class="campo">Numero WhatsApp <small>(serve solo se accendi il pulsante)</small><input name="whatsapp" inputmode="tel" value="' + h(i.whatsapp) + '" placeholder="Es. 333 1234567"></label>' +
       '</fieldset><div class="modulo-piede"><button class="btn grande">' + icona('spunta') + ' Salva</button></div></form>');
   }
 
   function paginaAdmin(pezzi, par) {
     if (pezzi[0] !== 'prodotto' && bozza) lasciaBozza(false);
+    if (pezzi[0] !== 'aspetto' && aspBozza) { aspBozza = null; applicaAspetto(asp()); }
+    if (pezzi[0] !== 'categorie') catBozza = null;
     if (pezzi[0] === 'prodotto') return adminProdotto(pezzi[1] || 'nuovo');
     if (pezzi[0] === 'carica') return adminCarica();
+    if (pezzi[0] === 'richieste') return adminRichieste();
     if (pezzi[0] === 'marchi') return adminMarchi();
+    if (pezzi[0] === 'categorie') return adminCategorie();
+    if (pezzi[0] === 'aspetto') return adminAspetto();
     if (pezzi[0] === 'impostazioni') return adminImpostazioni();
     return adminProdotti(par);
   }
 
   // ---------------------------------------------------------------- PAGINE D'INGRESSO
   function cartoncino(html) { $app.innerHTML = '<div class="accesso"><div class="accesso-card">' + html + '</div></div>'; }
+  function testaCartoncino(neg) {
+    const a = Object.assign({}, ASPETTO_BASE, neg.aspetto || {});
+    return a.logo ? '<img class="accesso-logo" src="' + h(D.urlFoto(a.logo, false)) + '" alt="">' : '<div class="accesso-lucchetto">' + icona('lucchetto') + '</div>';
+  }
   function paginaPrivata(neg) {
-    cartoncino('<div class="accesso-lucchetto">' + icona('lucchetto') + '</div><h1>' + h(neg.nome_negozio || 'Vetrina') + '</h1>' +
+    cartoncino(testaCartoncino(neg) + '<h1>' + h(neg.nome_negozio || 'Vetrina') + '</h1>' +
       (neg.sottotitolo ? '<p class="accesso-sotto">' + h(neg.sottotitolo) + '</p>' : '') +
       '<p>Questa vetrina è privata.<br>Per vederla ti serve il link di invito.</p>' +
       (D.demo ? '<div class="accesso-prova"><p><b>Modalità prova</b> (il database vero non è collegato):</p>' +
@@ -604,7 +792,7 @@
   }
   function paginaEntra(nuovo, neg) {
     nuovo = nuovo && neg.registrazione_aperta;
-    cartoncino('<div class="accesso-lucchetto">' + icona('lucchetto') + '</div><h1>' + h(neg.nome_negozio || 'Vetrina') + '</h1>' +
+    cartoncino(testaCartoncino(neg) + '<h1>' + h(neg.nome_negozio || 'Vetrina') + '</h1>' +
       (nuovo
         ? '<p class="nota">Crea l\'account della titolare. Si può fare <b>una volta sola</b>: dopo la porta si chiude.</p>' +
           '<form class="modulo compatto" data-form="registra"><label class="campo largo">Il tuo nome<input name="nome" required maxlength="80" autocomplete="name"></label>' +
@@ -619,8 +807,8 @@
 
   // ---------------------------------------------------------------- avvio e percorsi
   async function caricaAdmin() {
-    const [imp, m, p] = await Promise.all([D.impostazioni(), D.marchi(), D.prodotti()]);
-    S.imp = imp || {}; S.marchi = m || []; S.prodotti = (p || []).map(x => Object.assign({}, x, { foto: x.foto || [] }));
+    const [imp, m, p, r] = await Promise.all([D.impostazioni(), D.marchi(), D.prodotti(), D.richieste().catch(() => [])]);
+    S.imp = imp || {}; S.marchi = m || []; S.prodotti = (p || []).map(x => Object.assign({}, x, { foto: x.foto || [] })); S.richieste = r || [];
     S.codice = S.imp.codice_vetrina || '';
   }
 
@@ -630,18 +818,20 @@
     S.codice = qs.get('v') || '';
     const anteprima = qs.get('anteprima') === '1';
     S.utente = anteprima ? null : await D.utente().catch(() => null);
-    if (S.utente && S.utente.admin) { S.modo = 'admin'; await caricaAdmin(); return; }
+    if (S.utente && S.utente.admin) { S.modo = 'admin'; await caricaAdmin(); applicaAspetto(asp()); return; }
     if (S.codice) {
       const v = await D.vetrina(S.codice);
       if (v) {
         S.modo = 'visita'; S.imp = v.impostazioni || {}; S.marchi = v.marchi || [];
         S.prodotti = (v.prodotti || []).map(x => Object.assign({}, x, { foto: x.foto || [] }));
+        applicaAspetto(asp());
         return;
       }
       S.modo = 'scaduto'; return;
     }
     S.modo = 'fuori';
     neg = await D.negozio().catch(() => ({}));
+    applicaAspetto((neg && neg.aspetto) || {});
   }
 
   async function mostra() {
@@ -655,7 +845,7 @@
     }
     document.title = nomeNegozio();
     if (pezzi[0] === 'p') paginaProdotto(pezzi[1]);
-    else if (pezzi[0] === 'richiesta') paginaRichiesta();
+    else if (pezzi[0] === 'lista') paginaLista();
     else if (pezzi[0] === 'marchi') paginaMarchi();
     else if (pezzi[0] === 'admin' && admin()) paginaAdmin(pezzi.slice(1), par);
     else paginaNegozio(par);
@@ -666,6 +856,7 @@
     scorrimenti[hashPrima] = window.scrollY;
     hashPrima = location.hash;
     document.body.classList.remove('filtri-aperti');
+    const m = document.querySelector('.modale'); if (m) m.remove();
     await mostra();
     window.scrollTo(0, scorrimenti[location.hash] || 0);
   });
@@ -688,6 +879,7 @@
       else if (az === 'prova-admin') { await D.entra(); await riparti('#/'); }
       else if (az === 'apri-filtri') document.body.classList.add('filtri-aperti');
       else if (az === 'chiudi-filtri') document.body.classList.remove('filtri-aperti');
+      else if (az === 'chiudi-modale') { const m = el.closest('.modale'); if (m) m.remove(); }
       // scheda prodotto
       else if (az === 'scegli') { el.parentElement.querySelectorAll('.chip').forEach(c => c.classList.toggle('sel', c === el)); }
       else if (az === 'qta') { const q = document.getElementById('qta'); q.value = Math.max(1, (parseInt(q.value, 10) || 1) + Number(el.dataset.d)); }
@@ -696,36 +888,36 @@
       else if (az === 'chiudi-lente') { const l = document.querySelector('.lente'); if (l) l.remove(); }
       else if (az === 'aggiungi') {
         const s = sceltaProdotto(); if (!s) return;
-        const r = richiesta();
+        const r = lista();
         const uguale = r.find(x => x.id === s.x.id && x.taglia === s.x.taglia && x.colore === s.x.colore);
         if (uguale) uguale.qta += s.x.qta; else r.push(s.x);
-        salvaRichiesta(r);
-        const b = document.querySelector('a[href="#/richiesta"]');
-        if (b) { let pl = b.querySelector('.pallino'); if (!pl) { pl = document.createElement('b'); pl.className = 'pallino'; b.appendChild(pl); } pl.textContent = contaRichiesta(); }
-        avviso('Aggiunto ai scelti ✓', 'ok');
+        salvaLista(r);
+        const b = document.querySelector('a[href="#/lista"]');
+        if (b) { let pl = b.querySelector('.pallino'); if (!pl) { pl = document.createElement('b'); pl.className = 'pallino'; b.appendChild(pl); } pl.textContent = contaLista(); }
+        avviso('Aggiunto alla tua lista ✓', 'ok');
       }
-      else if (az === 'chiedi') {
-        const s = sceltaProdotto(); if (!s) return;
-        apriWhatsapp('Ciao! Mi interessa questo prodotto della vetrina:\n' + rigaTesto(s.p, s.x));
-      }
-      // scelti
+      else if (az === 'chiedi') { const s = sceltaProdotto(); if (s) apriModulo([articolo(s.p, s.x)], 'Chiedi informazioni'); }
+      else if (az === 'chiedi-wa') { const s = sceltaProdotto(); if (s) apriWhatsapp('Ciao! Mi interessa:\n' + rigaTesto(s.p, s.x)); }
+      // la mia lista
       else if (az === 'rr-qta' || az === 'rr-togli') {
-        const r = richiesta(), i = Number(el.dataset.i);
+        const r = lista(), i = Number(el.dataset.i);
         if (az === 'rr-togli') r.splice(i, 1); else r[i].qta = Math.max(1, r[i].qta + Number(el.dataset.d));
-        salvaRichiesta(r); paginaRichiesta();
+        salvaLista(r); paginaLista();
       }
-      else if (az === 'svuota') { if (confirm('Svuoto i scelti?')) { salvaRichiesta([]); paginaRichiesta(); } }
-      else if (az === 'invia-richiesta') {
-        const r = richiesta();
-        const tot = r.reduce((a, x) => a + (numero(S.prodotti.find(p => p.id === x.id).prezzo) || 0) * x.qta, 0);
-        apriWhatsapp('Ciao! Dalla vetrina ho scelto:\n' + r.map(x => rigaTesto(S.prodotti.find(p => p.id === x.id), x)).join('\n') +
-          (tot ? '\n\nTotale indicativo: ' + euro(tot) : ''));
-      }
+      else if (az === 'svuota') { if (confirm('Svuoto la lista?')) { salvaLista([]); paginaLista(); } }
+      else if (az === 'invia-lista') { apriModulo(lista().map(x => articolo(S.prodotti.find(p => p.id === x.id), x)), 'Invia la lista'); }
+      else if (az === 'invia-lista-wa') { apriWhatsapp('Ciao! Dalla vetrina ho scelto:\n' + lista().map(x => rigaTesto(S.prodotti.find(p => p.id === x.id), x)).join('\n')); }
       // carica foto
       else if (az === 'carica-cat') { carico.cat = el.dataset.id; adminCarica(); }
       else if (az === 'carica-gen') { carico.gen = el.dataset.id; adminCarica(); }
-      else if (az === 'carica-pulisci') { carico.lavori.forEach(l => URL.revokeObjectURL(l.anteprima)); carico.lavori = []; adminCarica(); }
-      // amministrazione
+      else if (az === 'carica-marchio') { carico.marchio = el.dataset.id; adminCarica(); }
+      else if (az === 'carica-marchio-nuovo') {
+        const nome = (prompt('Nome del nuovo marchio:') || '').trim(); if (!nome) return;
+        const r = await D.salvaMarchio({ nome });
+        S.marchi.push(r); S.marchi.sort((a, b) => a.nome.localeCompare(b.nome)); carico.marchio = r.id; adminCarica();
+      }
+      else if (az === 'carica-pulisci') { carico.lavori.forEach(l => URL.revokeObjectURL(l.anteprima)); carico.lavori = []; carico.nome = ''; adminCarica(); }
+      // prodotti
       else if (az === 'elimina-prodotto' || az === 'elimina-bozza') {
         const id = az === 'elimina-bozza' ? bozza.p.id : el.closest('[data-id]').dataset.id;
         const p = S.prodotti.find(x => x.id === id);
@@ -747,6 +939,15 @@
         else bozza.daTogliere.push(id);
         ridisegnaFotoBozza();
       }
+      // richieste
+      else if (az === 'aggiorna-richieste') { S.richieste = await D.richieste(); adminRichieste(); }
+      else if (az === 'segna-richiesta' || az === 'elimina-richiesta') {
+        const id = el.closest('[data-id]').dataset.id, r = S.richieste.find(x => x.id === id);
+        if (az === 'elimina-richiesta') { if (!confirm('Elimino la richiesta di ' + r.nome + '?')) return; await D.eliminaRichiesta(id); S.richieste = S.richieste.filter(x => x.id !== id); }
+        else { await D.segnaRichiesta(id, !r.letta); r.letta = !r.letta; }
+        adminRichieste();
+      }
+      // marchi
       else if (az === 'elimina-marchio') {
         const id = el.closest('[data-id]').dataset.id, m = marchio(id);
         const n = S.prodotti.filter(p => p.marchio_id === id).length;
@@ -756,10 +957,49 @@
         S.prodotti.forEach(p => { if (p.marchio_id === id) p.marchio_id = null; });
         adminMarchi(); avviso('Marchio eliminato.', 'ok');
       }
+      // categorie
+      else if (az === 'cat-su' || az === 'cat-giu') {
+        const i = Number(el.closest('[data-i]').dataset.i), j = az === 'cat-su' ? i - 1 : i + 1;
+        [catBozza[i], catBozza[j]] = [catBozza[j], catBozza[i]]; adminCategorie();
+      }
+      else if (az === 'cat-togli') {
+        const i = Number(el.closest('[data-i]').dataset.i), c = catBozza[i];
+        if (S.prodotti.some(p => p.categoria === c.id)) return avviso('Ci sono prodotti in “' + c.nome + '”: spostali o nascondi la categoria.', 'errore');
+        if (catBozza.length === 1) return avviso('Serve almeno una categoria.', 'errore');
+        catBozza.splice(i, 1); adminCategorie();
+      }
+      else if (az === 'cat-annulla') { catBozza = null; adminCategorie(); }
+      else if (az === 'cat-salva') {
+        if (catBozza.some(c => !String(c.nome).trim())) return avviso('Ogni categoria deve avere un nome.', 'errore');
+        await D.salvaImpostazioni({ categorie: catBozza });
+        S.imp.categorie = JSON.parse(JSON.stringify(catBozza)); catBozza = null;
+        adminCategorie(); avviso('Categorie salvate ✓', 'ok');
+      }
+      // aspetto
+      else if (az === 'asp-scegli') {
+        aspBozza[el.dataset.campo] = el.dataset.campo === 'colonne' ? Number(el.dataset.valore) : el.dataset.valore;
+        provaAspetto(); adminAspetto();
+      }
+      else if (az === 'asp-tavolozza') {
+        const t = TAVOLOZZE[Number(el.dataset.i)];
+        Object.assign(aspBozza, { principale: t[1], accento: t[2], banner: t[3] }); provaAspetto(); adminAspetto();
+      }
+      else if (az === 'asp-togli-img') { aspBozza[el.dataset.campo] = ''; provaAspetto(); adminAspetto(); }
+      else if (az === 'asp-annulla') { aspBozza = null; applicaAspetto(asp()); adminAspetto(); }
+      else if (az === 'asp-base') { aspBozza = Object.assign({}, ASPETTO_BASE); provaAspetto(); adminAspetto(); }
+      else if (az === 'asp-salva') {
+        const vecchio = asp();
+        await D.salvaImpostazioni({ aspetto: aspBozza });
+        S.imp.aspetto = Object.assign({}, aspBozza);
+        const via = ['logo', 'immagine'].filter(k => vecchio[k] && vecchio[k] !== aspBozza[k]).map(k => vecchio[k]);
+        if (via.length) D.eliminaFoto(via).catch(() => {});
+        aspBozza = null; applicaAspetto(asp()); adminAspetto(); avviso('Aspetto salvato ✓', 'ok');
+      }
+      // link
       else if (az === 'copia-link') {
         const t = document.getElementById('link-vetrina');
         try { await navigator.clipboard.writeText(t.value); } catch (e) { t.select(); document.execCommand('copy'); }
-        avviso('Link copiato: incollalo in WhatsApp.', 'ok');
+        avviso('Link copiato: incollalo dove vuoi.', 'ok');
       }
       else if (az === 'condividi-link') {
         try { await navigator.share({ title: nomeNegozio(), text: 'Guarda la mia vetrina:', url: linkVetrina() }); } catch (e) { /* annullato */ }
@@ -772,14 +1012,12 @@
     } catch (e) { avviso(e.message, 'errore'); }
   });
 
-  // modifiche veloci (prezzo, interruttori, ordinamento, marchi, file)
+  // modifiche veloci
   document.addEventListener('change', async ev => {
     const el = ev.target, az = el.dataset.az;
     if (!az) return;
     try {
-      if (az === 'ordina') {
-        const f = filtriDa(leggiIndirizzo().par); f.ord = el.value; location.hash = linkFiltri(f);
-      }
+      if (az === 'ordina') { const f = filtriDa(leggiIndirizzo().par); f.ord = el.value; location.hash = linkFiltri(f); }
       else if (az === 'prezzo-veloce' || az === 'campo-veloce') {
         const riga = el.closest('[data-id]'), p = S.prodotti.find(x => x.id === riga.dataset.id);
         const cambio = az === 'prezzo-veloce' ? { prezzo: numero(el.value) } : { [el.dataset.campo]: el.checked };
@@ -805,7 +1043,6 @@
         adminProdotto(bozza.idPagina);
       }
       else if (az === 'carica-stesso') { carico.stesso = el.checked; adminCarica(); }
-      else if (az === 'carica-prezzo') { carico.prezzo = el.value; }
       else if (az === 'carica-file') { const files = [...el.files]; el.value = ''; await caricaFile(files); }
       else if (az === 'carica-foto') {
         const files = [...el.files]; el.value = '';
@@ -818,15 +1055,33 @@
           if (bozza === b) ridisegnaFotoBozza();
         }
       }
+      else if (az === 'cat-campo') {
+        const c = catBozza[Number(el.closest('[data-i]').dataset.i)];
+        c[el.dataset.campo] = el.type === 'checkbox' ? el.checked : el.value;
+        if (el.dataset.campo === 'icona') adminCategorie();
+      }
+      else if (az === 'asp-spunta') { aspBozza[el.dataset.campo] = el.checked; provaAspetto(); }
+      else if (az === 'asp-img') {
+        const file = el.files[0]; el.value = ''; if (!file) return;
+        avviso('Carico l\'immagine…');
+        aspBozza[el.dataset.campo] = await D.caricaFoto(file);
+        provaAspetto(); adminAspetto();
+      }
     } catch (e) {
       avviso(e.message, 'errore');
       if (az === 'prezzo-veloce' || az === 'campo-veloce') { const p = S.prodotti.find(x => x.id === el.closest('[data-id]').dataset.id); if (az === 'prezzo-veloce') el.value = p.prezzo == null ? '' : p.prezzo; else el.checked = !!p[el.dataset.campo]; }
     }
   });
-  document.addEventListener('input', ev => { if (ev.target.dataset.az === 'carica-prezzo') carico.prezzo = ev.target.value; });
+  document.addEventListener('input', ev => {
+    const el = ev.target, az = el.dataset.az;
+    if (az === 'carica-prezzo') carico.prezzo = el.value;
+    else if (az === 'carica-nome') carico.nome = el.value;
+    else if (az === 'cat-campo' && el.type !== 'checkbox' && el.tagName !== 'SELECT') catBozza[Number(el.closest('[data-i]').dataset.i)][el.dataset.campo] = el.value;
+    else if (az === 'asp-colore') { aspBozza[el.dataset.campo] = el.value; provaAspetto(); }
+  });
   document.addEventListener('keydown', ev => {
     if (ev.key === 'Enter' && ev.target.matches('[data-az="prezzo-veloce"], [data-az="rinomina-marchio"]')) { ev.preventDefault(); ev.target.blur(); }
-    if (ev.key === 'Escape') { const l = document.querySelector('.lente'); if (l) l.remove(); document.body.classList.remove('filtri-aperti'); }
+    if (ev.key === 'Escape') { ['.lente', '.modale'].forEach(s => { const l = document.querySelector(s); if (l) l.remove(); }); document.body.classList.remove('filtri-aperti'); }
   });
 
   // ---------------------------------------------------------------- moduli
@@ -846,10 +1101,19 @@
         await riparti('#/admin/impostazioni');
         avviso('Account creato: adesso sei la titolare ✓', 'ok');
       }
+      else if (tipo === 'richiesta') {
+        const m = form.closest('.modale');
+        const r = { nome: val('nome'), contatto: val('contatto'), messaggio: val('messaggio'), articoli: m._articoli || [] };
+        await D.inviaRichiesta(S.codice, r);
+        try { localStorage.setItem('vetrina-io', JSON.stringify({ nome: r.nome, contatto: r.contatto })); } catch (e) { /* niente */ }
+        m.querySelector('.modale-scheda').innerHTML = '<div class="accesso-lucchetto">' + icona('spunta') + '</div><h2>Inviata!</h2><p>' + h(nomeNegozio()) + ' ha ricevuto la tua richiesta.</p><button type="button" class="btn largo" data-az="chiudi-modale">Chiudi</button>';
+        if (location.hash === '#/lista') { salvaLista([]); paginaLista(); }
+        if (admin()) S.richieste = await D.richieste();
+      }
       else if (tipo === 'prodotto') {
         leggiModulo(form);
         if (bozza.inCaricamento) { avviso('Aspetta che le foto finiscano di caricarsi.', 'errore'); return; }
-        if (!bozza.p.nome) { avviso('Manca il nome.', 'errore'); return; }
+        if (!bozza.p.nome) { avviso('Manca il titolo.', 'errore'); return; }
         const salvato = await D.salvaProdotto(bozza.p);
         const i = S.prodotti.findIndex(x => x.id === salvato.id);
         if (i >= 0) S.prodotti[i] = salvato; else S.prodotti.unshift(salvato);
@@ -862,8 +1126,17 @@
         S.marchi.push(r); S.marchi.sort((a, b) => a.nome.localeCompare(b.nome));
         adminMarchi(); avviso('Marchio aggiunto.', 'ok');
       }
+      else if (tipo === 'nuova-categoria') {
+        const nome = val('nome');
+        let id = semplice(nome).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'categoria';
+        while (catBozza.some(c => c.id === id)) id += '-2';
+        catBozza.push({ id, nome, uno: nome, icona: 'stella', visibile: true });
+        adminCategorie(); avviso('Aggiunta: ricordati di premere Salva.', 'ok');
+      }
       else if (tipo === 'impostazioni') {
-        const v = { nome_negozio: val('nome_negozio') || 'Vetrina', sottotitolo: val('sottotitolo'), messaggio_benvenuto: form.elements.messaggio_benvenuto.value.trim(), whatsapp: val('whatsapp') };
+        const v = { nome_negozio: val('nome_negozio') || 'Vetrina', sottotitolo: val('sottotitolo'), messaggio_benvenuto: form.elements.messaggio_benvenuto.value.trim(),
+          whatsapp: val('whatsapp'), richieste_attive: form.elements.richieste_attive.checked, mostra_whatsapp: form.elements.mostra_whatsapp.checked };
+        if (v.mostra_whatsapp && !v.whatsapp) { avviso('Per mostrare il pulsante WhatsApp serve il numero.', 'errore'); return; }
         await D.salvaImpostazioni(v);
         Object.assign(S.imp, v); document.title = nomeNegozio();
         adminImpostazioni(); avviso('Salvato ✓', 'ok');

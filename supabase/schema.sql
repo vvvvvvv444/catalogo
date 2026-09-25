@@ -196,3 +196,143 @@ create policy "foto: admin cancella" on storage.objects for delete to authentica
   using (bucket_id = 'foto' and public.e_admin());
 
 -- Fine: deve comparire "Success. No rows returned".
+
+-- =====================================================================
+--  VERSIONE 3: richieste dentro la vetrina (numero privato), aspetto e categorie modificabili
+-- =====================================================================
+alter table public.impostazioni add column if not exists aspetto jsonb not null default '{}'::jsonb;
+alter table public.impostazioni add column if not exists categorie jsonb;
+alter table public.impostazioni add column if not exists mostra_whatsapp boolean not null default false;
+
+create table if not exists public.richieste (
+  id uuid primary key default gen_random_uuid(),
+  creato timestamptz not null default now(),
+  nome text not null default '',
+  contatto text not null default '',
+  messaggio text not null default '',
+  articoli jsonb not null default '[]'::jsonb,
+  letta boolean not null default false
+);
+alter table public.richieste enable row level security;
+revoke all on public.richieste from anon;
+grant select, update, delete on public.richieste to authenticated;
+drop policy if exists "richieste: admin" on public.richieste;
+create policy "richieste: admin" on public.richieste for all to authenticated
+  using (public.e_admin()) with check (public.e_admin());
+
+-- Chi ha il link puo' mandare una richiesta (ma non leggerne nessuna).
+create or replace function public.invia_richiesta(codice text, p_nome text, p_contatto text, p_messaggio text, p_articoli jsonb)
+returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if codice is null or codice <> (select codice_vetrina from public.impostazioni where id = 1) then
+    raise exception 'Link non valido';
+  end if;
+  if length(trim(coalesce(p_nome, ''))) < 2 or length(trim(coalesce(p_contatto, ''))) < 3 then
+    raise exception 'Mancano nome o contatto';
+  end if;
+  if (select count(*) from public.richieste where creato > now() - interval '10 minutes') >= 30 then
+    raise exception 'Troppe richieste: riprova fra qualche minuto';
+  end if;
+  if jsonb_typeof(p_articoli) is distinct from 'array' or jsonb_array_length(p_articoli) > 100 then
+    p_articoli := '[]'::jsonb;
+  end if;
+  insert into public.richieste (nome, contatto, messaggio, articoli)
+  values (left(trim(p_nome), 80), left(trim(p_contatto), 120), left(coalesce(p_messaggio, ''), 2000), p_articoli);
+  return true;
+end $$;
+revoke execute on function public.invia_richiesta(text, text, text, text, jsonb) from public;
+grant execute on function public.invia_richiesta(text, text, text, text, jsonb) to anon, authenticated;
+
+create or replace function public.negozio() returns json
+language sql stable security definer set search_path = public as $$
+  select json_build_object('nome_negozio', nome_negozio, 'sottotitolo', sottotitolo,
+                           'registrazione_aperta', registrazione_aperta, 'aspetto', aspetto)
+  from public.impostazioni where id = 1;
+$$;
+
+create or replace function public.vetrina(codice text) returns json
+language plpgsql stable security definer set search_path = public as $$
+declare i public.impostazioni;
+begin
+  select * into i from public.impostazioni where id = 1;
+  if codice is null or length(codice) < 16 or codice <> i.codice_vetrina then
+    return null;
+  end if;
+  return json_build_object(
+    'impostazioni', json_build_object('nome_negozio', i.nome_negozio, 'sottotitolo', i.sottotitolo,
+        'messaggio_benvenuto', i.messaggio_benvenuto, 'aspetto', i.aspetto, 'categorie', i.categorie,
+        'mostra_whatsapp', i.mostra_whatsapp,
+        'whatsapp', case when i.mostra_whatsapp then i.whatsapp else '' end),
+    'marchi', coalesce((select json_agg(json_build_object('id', m.id, 'nome', m.nome) order by m.nome) from public.marchi m), '[]'::json),
+    'prodotti', coalesce((select json_agg(json_build_object(
+        'id', p.id, 'nome', p.nome, 'marchio_id', p.marchio_id, 'categoria', p.categoria, 'genere', p.genere,
+        'prezzo', p.prezzo, 'prezzo_pieno', p.prezzo_pieno, 'descrizione', p.descrizione, 'dettagli', p.dettagli,
+        'taglie', p.taglie, 'colori', p.colori, 'foto', p.foto, 'disponibile', p.disponibile,
+        'in_evidenza', p.in_evidenza, 'codice', p.codice, 'ordine', p.ordine, 'creato', p.creato)
+        order by p.ordine, p.creato desc)
+      from public.prodotti p where p.visibile), '[]'::json)
+  );
+end $$;
+
+-- ---------- v3b: passaparola (richieste spente di partenza) e codice breve automatico ----------
+alter table public.impostazioni add column if not exists richieste_attive boolean not null default false;
+
+create sequence if not exists public.prodotti_numero;
+create or replace function public.codice_prodotto() returns trigger
+language plpgsql as $$
+begin
+  if coalesce(trim(new.codice), '') = '' then
+    new.codice := upper(left(regexp_replace(new.categoria, '[^a-zA-Z]', '', 'g') || 'XX', 2)) || '-' || lpad(nextval('public.prodotti_numero')::text, 3, '0');
+  end if;
+  return new;
+end $$;
+drop trigger if exists prodotti_codice on public.prodotti;
+create trigger prodotti_codice before insert on public.prodotti
+  for each row execute function public.codice_prodotto();
+
+create or replace function public.invia_richiesta(codice text, p_nome text, p_contatto text, p_messaggio text, p_articoli jsonb)
+returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if codice is null or codice <> (select codice_vetrina from public.impostazioni where id = 1) then
+    raise exception 'Link non valido';
+  end if;
+  if not (select richieste_attive from public.impostazioni where id = 1) then
+    raise exception 'Le richieste dalla vetrina sono spente';
+  end if;
+  if length(trim(coalesce(p_nome, ''))) < 2 then
+    raise exception 'Manca il nome';
+  end if;
+  if (select count(*) from public.richieste where creato > now() - interval '10 minutes') >= 30 then
+    raise exception 'Troppe richieste: riprova fra qualche minuto';
+  end if;
+  if jsonb_typeof(p_articoli) is distinct from 'array' or jsonb_array_length(p_articoli) > 100 then
+    p_articoli := '[]'::jsonb;
+  end if;
+  insert into public.richieste (nome, contatto, messaggio, articoli)
+  values (left(trim(p_nome), 80), left(trim(coalesce(p_contatto, '')), 120), left(coalesce(p_messaggio, ''), 2000), p_articoli);
+  return true;
+end $$;
+
+create or replace function public.vetrina(codice text) returns json
+language plpgsql stable security definer set search_path = public as $$
+declare i public.impostazioni;
+begin
+  select * into i from public.impostazioni where id = 1;
+  if codice is null or length(codice) < 16 or codice <> i.codice_vetrina then
+    return null;
+  end if;
+  return json_build_object(
+    'impostazioni', json_build_object('nome_negozio', i.nome_negozio, 'sottotitolo', i.sottotitolo,
+        'messaggio_benvenuto', i.messaggio_benvenuto, 'aspetto', i.aspetto, 'categorie', i.categorie,
+        'richieste_attive', i.richieste_attive, 'mostra_whatsapp', i.mostra_whatsapp,
+        'whatsapp', case when i.mostra_whatsapp then i.whatsapp else '' end),
+    'marchi', coalesce((select json_agg(json_build_object('id', m.id, 'nome', m.nome) order by m.nome) from public.marchi m), '[]'::json),
+    'prodotti', coalesce((select json_agg(json_build_object(
+        'id', p.id, 'nome', p.nome, 'marchio_id', p.marchio_id, 'categoria', p.categoria, 'genere', p.genere,
+        'prezzo', p.prezzo, 'prezzo_pieno', p.prezzo_pieno, 'descrizione', p.descrizione, 'dettagli', p.dettagli,
+        'taglie', p.taglie, 'colori', p.colori, 'foto', p.foto, 'disponibile', p.disponibile,
+        'in_evidenza', p.in_evidenza, 'codice', p.codice, 'ordine', p.ordine, 'creato', p.creato)
+        order by p.ordine, p.creato desc)
+      from public.prodotti p where p.visibile), '[]'::json)
+  );
+end $$;

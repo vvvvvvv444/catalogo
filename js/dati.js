@@ -121,7 +121,14 @@
         if (!ids.length) return;
         await sb.storage.from('foto').remove(ids.flatMap(id => [id + '.jpg', id + '_m.jpg']));
       },
-      urlFoto(id, miniatura) { return baseFoto + encodeURIComponent(id) + (miniatura ? '_m.jpg' : '.jpg'); }
+      urlFoto(id, miniatura) { return baseFoto + encodeURIComponent(id) + (miniatura ? '_m.jpg' : '.jpg'); },
+
+      async inviaRichiesta(codice, r) {
+        ok(await sb.rpc('invia_richiesta', { codice, p_nome: r.nome, p_contatto: r.contatto, p_messaggio: r.messaggio, p_articoli: r.articoli }));
+      },
+      async richieste() { return ok(await sb.from('richieste').select('*').order('creato', { ascending: false }).limit(500)); },
+      async segnaRichiesta(id, letta) { ok(await sb.from('richieste').update({ letta }).eq('id', id)); },
+      async eliminaRichiesta(id) { ok(await sb.from('richieste').delete().eq('id', id)); }
     };
   }
 
@@ -140,7 +147,7 @@
     const P = (nome, mi, categoria, genere, prezzo, prezzo_pieno, descrizione, extra) => Object.assign({
       id: 'p' + (++n), nome, marchio_id: mi == null ? null : 'm' + mi, categoria, genere, prezzo, prezzo_pieno, descrizione,
       dettagli: '', taglie: '', colori: '', foto: ['seme-' + categoria], disponibile: true, in_evidenza: false, visibile: true, da_descrivere: false,
-      codice: '', ordine: 0, creato: new Date(Date.now() - n * 3600e3).toISOString()
+      codice: categoria.slice(0, 2).toUpperCase() + '-' + String(n).padStart(3, '0'), ordine: 0, creato: new Date(Date.now() - n * 3600e3).toISOString()
     }, extra || {});
     const prodotti = [
       P('Sneaker in pelle bianca', 1, 'scarpe', 'donna', 79.9, 99.9, 'Sneaker bassa in pelle liscia, suola in gomma leggera e soletta imbottita: comoda tutto il giorno, sta bene con jeans e gonne.', { taglie: '36, 37, 38, 39, 40', colori: 'Bianco, Bianco/Oro', in_evidenza: true, dettagli: 'Tomaia in pelle\nSuola in gomma\nPlantare estraibile' }),
@@ -165,12 +172,16 @@
     C.categorie.forEach(c => { const u = segnaposto(c.id); foto['seme-' + c.id] = { g: u, m: u }; });
     return {
       marchi, prodotti, foto, sessione: null,
-      impostazioni: { nome_negozio: 'La mia Vetrina', sottotitolo: 'Scarpe, borse, gioielli e bellezza', whatsapp: '', messaggio_benvenuto: 'Guarda con calma e scrivimi su WhatsApp quello che ti piace.', codice_vetrina: 'prova-prova-prova-1234', registrazione_aperta: false }
+      impostazioni: { nome_negozio: 'La mia Vetrina', sottotitolo: 'Scarpe, borse, gioielli e bellezza', whatsapp: '', messaggio_benvenuto: 'Guarda con calma e dimmi i codici di quello che ti piace.', codice_vetrina: 'prova-prova-prova-1234', registrazione_aperta: false, aspetto: {}, categorie: null, mostra_whatsapp: false, richieste_attive: false },
+      richieste: [
+        { id: 'r1', creato: new Date(Date.now() - 36e5).toISOString(), letta: false, nome: 'Giulia', contatto: '333 1234567', messaggio: 'Ciao! La borsa c\'è anche in nero?', articoli: [{ id: 'p4', nome: 'Borsa a spalla in ecopelle', colore: 'Nero', qta: 1, prezzo: 45 }] },
+        { id: 'r2', creato: new Date(Date.now() - 864e5).toISOString(), letta: true, nome: 'Marco', contatto: '@marco.ig', messaggio: 'Prezzo per due paia?', articoli: [{ id: 'p2', nome: 'Mocassino classico', taglia: '42', qta: 2, prezzo: 89 }] }
+      ]
     };
   }
 
   function motoreProva() {
-    const CHIAVE = 'vetrina-prova-v2';
+    const CHIAVE = 'vetrina-prova-v3';
     let db = null;
     try { db = JSON.parse(localStorage.getItem(CHIAVE)); } catch (e) { /* vuoto */ }
     if (!db) db = semina();
@@ -183,11 +194,12 @@
 
     return {
       demo: true,
-      async negozio() { return { nome_negozio: i.nome_negozio, sottotitolo: i.sottotitolo, registrazione_aperta: false }; },
+      async negozio() { return { nome_negozio: i.nome_negozio, sottotitolo: i.sottotitolo, registrazione_aperta: false, aspetto: i.aspetto || {} }; },
       async vetrina(codice) {
         if (codice !== i.codice_vetrina) return null;
         return copia({
-          impostazioni: { nome_negozio: i.nome_negozio, sottotitolo: i.sottotitolo, messaggio_benvenuto: i.messaggio_benvenuto, whatsapp: i.whatsapp },
+          impostazioni: { nome_negozio: i.nome_negozio, sottotitolo: i.sottotitolo, messaggio_benvenuto: i.messaggio_benvenuto,
+            aspetto: i.aspetto || {}, categorie: i.categorie || null, richieste_attive: !!i.richieste_attive, mostra_whatsapp: !!i.mostra_whatsapp, whatsapp: i.mostra_whatsapp ? i.whatsapp : '' },
           marchi: db.marchi, prodotti: db.prodotti.filter(p => p.visibile !== false)
         });
       },
@@ -219,7 +231,11 @@
         const r = Object.assign({}, p, { aggiornato: new Date().toISOString() });
         const k = r.id ? db.prodotti.findIndex(x => x.id === r.id) : -1;
         if (k >= 0) db.prodotti[k] = r;
-        else { r.id = 'p' + Date.now() + Math.random().toString(36).slice(2, 5); r.creato = r.aggiornato; db.prodotti.unshift(r); }
+        else {
+          r.id = 'p' + Date.now() + Math.random().toString(36).slice(2, 5); r.creato = r.aggiornato;
+          if (!r.codice) { db.numero = (db.numero || 100) + 1; r.codice = (r.categoria.replace(/[^a-z]/gi, '') + 'XX').slice(0, 2).toUpperCase() + '-' + String(db.numero).padStart(3, '0'); }
+          db.prodotti.unshift(r);
+        }
         salva(); return copia(r);
       },
       async eliminaProdotto(p) {
@@ -237,7 +253,18 @@
         ids.forEach(id => { if (!String(id).startsWith('seme-')) delete db.foto[id]; });
         salva();
       },
-      urlFoto(id, miniatura) { const f = db.foto[id]; return f ? (miniatura ? f.m : f.g) : ''; }
+      urlFoto(id, miniatura) { const f = db.foto[id]; return f ? (miniatura ? f.m : f.g) : ''; },
+
+      async inviaRichiesta(codice, r) {
+        if (codice !== i.codice_vetrina) throw new Error('Link non valido');
+        if (!i.richieste_attive) throw new Error('Le richieste dalla vetrina sono spente');
+        if ((r.nome || '').trim().length < 2) throw new Error('Manca il nome');
+        (db.richieste = db.richieste || []).unshift(Object.assign({ id: 'r' + Date.now(), creato: new Date().toISOString(), letta: false }, r));
+        salva();
+      },
+      async richieste() { return copia(db.richieste || []); },
+      async segnaRichiesta(id, letta) { const r = (db.richieste || []).find(x => x.id === id); if (r) r.letta = letta; salva(); },
+      async eliminaRichiesta(id) { db.richieste = (db.richieste || []).filter(x => x.id !== id); salva(); }
     };
   }
 
