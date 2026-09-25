@@ -31,7 +31,10 @@ if (cmd === 'chi') {
   console.log('repository:', c.stato === 201 ? 'creato' : c.stato === 422 ? 'esisteva gia\'' : 'ERRORE ' + c.stato + ' ' + JSON.stringify(c.j));
   if (c.stato !== 201 && c.stato !== 422) process.exit(1);
   const basic = Buffer.from('x-access-token:' + TOKEN).toString('base64');
-  execFileSync('git', ['-C', radice, '-c', 'http.extraHeader=Authorization: Basic ' + basic, 'push', `https://github.com/${utente}/${REPO}.git`, 'main:main'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  const git = (...a) => execFileSync('git', ['-C', radice, '-c', 'http.extraHeader=Authorization: Basic ' + basic, ...a], { stdio: ['ignore', 'ignore', 'pipe'] });
+  // la sveglia salva ultima-sveglia.txt online: prima si prende quello, poi si carica il nostro
+  if (c.stato === 422) git('pull', '--rebase', `https://github.com/${utente}/${REPO}.git`, 'main');
+  git('push', `https://github.com/${utente}/${REPO}.git`, 'main:main');
   console.log('file caricati');
   const p = await api('POST', `/repos/${utente}/${REPO}/pages`, { source: { branch: 'main', path: '/' } });
   console.log('pubblicazione:', p.stato === 201 ? 'accesa' : p.stato === 409 ? 'era gia\' accesa' : 'ERRORE ' + p.stato + ' ' + JSON.stringify(p.j));
@@ -41,6 +44,12 @@ if (cmd === 'chi') {
   const b = await api('GET', `/repos/${utente}/${REPO}/pages/builds/latest`);
   const w = await api('GET', `/repos/${utente}/${REPO}/actions/workflows`);
   console.log({ pagina: p.j.html_url, stato: p.j.status, ultimaCostruzione: b.j.status, sveglie: (w.j.workflows || []).map(x => x.name + ': ' + x.state) });
+} else if (cmd === 'sveglia') {
+  const d = await api('POST', `/repos/${utente}/${REPO}/actions/workflows/sveglia.yml/dispatches`, { ref: 'main' });
+  console.log('sveglia lanciata:', d.stato === 204 ? 'si' : 'ERRORE ' + d.stato + ' ' + JSON.stringify(d.j));
+} else if (cmd === 'esiti') {
+  const r = await api('GET', `/repos/${utente}/${REPO}/actions/runs?per_page=5`);
+  for (const x of r.j.workflow_runs || []) console.log(x.name, '|', x.status, '|', x.conclusion, '|', x.created_at);
 } else {
-  console.log('comandi: chi | pubblica | stato');
+  console.log('comandi: chi | pubblica | stato | sveglia | esiti');
 }
